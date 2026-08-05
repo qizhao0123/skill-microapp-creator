@@ -1,0 +1,41 @@
+apiVersion: deploy.xzd5/v1
+kind: WebApp
+
+metadata:
+  name: sample-static-app
+  displayName: 示例静态应用
+  version: 1.0.0
+
+spec:
+  route:
+    path: /tools/sample-static-app
+    mode: static-strip
+
+  container:
+    port: 8080
+
+  health:
+    path: /
+    expectedStatus: 200
+
+  persistence:
+    mode: none
+
+  env: []
+
+  entrypoints:
+    - key: home
+      name: 首页
+      path: /
+      primary: true
+
+  smokeTests:
+    - path: /
+      method: GET
+      expectedStatus: 200
+      contentType: text/html
+
+  resources:
+    cpus: "0.25"
+    memory: 64m
+    pids: 64

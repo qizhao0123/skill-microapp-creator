@@ -1,0 +1,127 @@
+---
+name: skill-microapp-creator
+description: Create, retrofit, update, validate, and package internal Web apps for the controlled App Deployer contract (`deploy.xzd5/v1`). Use when a user asks to create a micro app for app-deployer, make an existing Web app compatible with the publisher, add `APP_BASE_PATH` or `/app/data` support, author `app.yaml`, prepare a higher-SemVer code/config release, create a persistent-data-only DataPatch ZIP, or guide the upload and manual publish workflow.
+---
+
+# App Deployer Micro App Creator
+
+Create or modify application repositories; do not modify App Deployer itself unless the user explicitly asks. Preserve existing business behavior and data while bringing the application to the platform contract.
+
+## Establish the source of truth
+
+1. Read the target project's `AGENTS.md` files and inspect its worktree before editing.
+2. Resolve the live App Deployer root in this order:
+   - a path supplied by the user;
+   - `APP_DEPLOYER_DIR`;
+   - a sibling `app-deployer` directory near the target project;
+   - `C:\Users\qizha\Documents\codex_project\app-deployer` when present.
+3. When the live root exists, completely read `docs/DEVELOPMENT_STANDARD.md`, `docs/APP_MANIFEST.md`, and the target app's current `app.yaml`. For a DataPatch, also completely read `docs/DATA_UPDATE.md`. Treat live code and schemas as newer than this skill.
+4. If upload/update behavior is ambiguous, inspect `internal/manifest`, `internal/archive`, `internal/datapatch`, and `internal/control/server.go`; do not infer platform behavior from generic Docker conventions.
+5. If the live root is unavailable, read [references/platform-contract.md](references/platform-contract.md) and explicitly report that current platform drift was not checked.
+
+## Classify the request
+
+Use one primary path:
+
+| Request | Required path |
+|---|---|
+| Build a new app | Create a compliant repository and first SemVer code release |
+| Make an old app compatible | Audit first, preserve behavior/data, then retrofit |
+| Change code, HTML, CSS, JS, templates, image assets tied to code, `app.yaml`, or production env values | Create a higher SemVer code release |
+| Change only files under an active manifest's `persistence.mutablePaths` | Create an independent DataPatch revision; do not change app SemVer |
+| Upload or publish an artifact | Require explicit authorization; keep upload/validation separate from manual publish/cutover |
+
+If a request mixes code and mutable data, make a code release. Include seed data only for first initialization; never use it to overwrite live data.
+
+## Run the audit before changing code
+
+Execute the bundled read-only scanner:
+
+```text
+python <skill-dir>/scripts/audit_microapp.py <project-dir> --format markdown
+```
+
+Then trace actual runtime entrypoints, lockfiles, listen host/port, routes, root-relative URLs, API clients, redirects, downloads, Cookie paths, secrets, persistent writes, startup initialization, health behavior, and all user-facing entrypoints. Treat scanner warnings as leads, not proof.
+
+For a retrofit, record an evidence-based ledger with: current behavior, contract gap, planned change, data migration impact, rollback, and verification. Stop for user confirmation only when a choice changes the data model, permissions, user flow, identity, route identity, persistence boundary, or external backup strategy.
+
+## Apply the application contract
+
+Always read [references/platform-contract.md](references/platform-contract.md) before implementing.
+
+1. Make dynamic services listen on platform `HOST` and `PORT`; the container must accept `0.0.0.0` traffic.
+2. Prefer `route.mode: native`. Make pages, assets, APIs, redirects, downloads, generated links, service-worker scope, and Cookie Path honor `APP_BASE_PATH`. Use `static-strip` only for a truly static site whose URLs are all relative.
+3. Read business configuration only from environment variables. Declare names and types in `spec.env`; never commit real `.env` values or secret defaults. Do not redeclare platform-reserved variables.
+4. Add an unauthenticated, side-effect-free GET health endpoint. Keep smoke tests read-only (`GET` or `HEAD`).
+5. Declare every user-facing entrypoint. Mark at most one primary entrypoint.
+6. Classify persistence honestly:
+   - use `none` only when no state must survive a container replacement;
+   - use `files` and exactly `/app/data` for platform-protected file state;
+   - use `seed/data` only when initializing an empty data directory;
+   - declare only independently updatable subtrees in `mutablePaths`.
+7. Treat external MySQL/PostgreSQL, object storage, or state outside `/app/data` as a release blocker until the platform has a native backup/restore adapter. Do not describe filesystem copying as protection for external state.
+8. Deliver root-level `app.yaml`, `Dockerfile`, `.dockerignore`, source, and lockfiles. Do not add uploader-controlled Compose, Nginx, shell deployment instructions, host ports/mounts, `privileged`, host network, or Docker Socket access.
+
+Start manifests from [assets/app-native.yaml](assets/app-native.yaml) or [assets/app-static-strip.yaml](assets/app-static-strip.yaml), and start `.dockerignore` from [assets/dockerignore.template](assets/dockerignore.template). Replace every example value and remove unused declarations.
+
+## Handle each workflow
+
+Read [references/workflows.md](references/workflows.md) for the selected path.
+
+### New application
+
+Implement the smallest suitable stack, its tests, `app.yaml`, Dockerfile, and `.dockerignore`. Keep framework-native lockfiles. Add base-path and persistence tests before packaging.
+
+### Existing application retrofit
+
+Preserve existing behavior and user data. Migrate writes to `/app/data` with an explicit one-time migration and rollback plan. Initialize from `seed/data` only when `/app/data` is empty. Do not replace the application with a rewrite merely to satisfy packaging.
+
+### Code or configuration update
+
+Read the deployed/current manifest before editing. Keep `metadata.name`, `spec.route.path`, `spec.route.mode`, and `spec.persistence.mode` unchanged for an existing application; the platform rejects changes to the last three app invariants. Raise `metadata.version` above the platform's latest release using SemVer. If route identity or persistence mode must change, stop and plan a new application identity or an explicit platform migration.
+
+### Data-only update
+
+Confirm that the application is active, uses `persistence.mode: files`, and that the active manifest allows the exact target. If the target is not allowed, first ship and activate a higher-SemVer code release that declares it.
+
+Build a canonical patch with:
+
+```text
+python <skill-dir>/scripts/build_data_patch.py --app <metadata.name> --revision <data-revision> --target <allowed-relative-target> --files <directory-to-place-under-target> --delete <relative-path-if-needed> --description <short-description> --output <artifact.zip>
+```
+
+Omit `--files` for deletion-only patches; repeat `--delete` as needed. Add `--validate-json` when every uploaded payload must be a syntactically valid UTF-8 JSON file. Never infer deletion from a missing file. Never include code, `app.yaml`, or paths outside `data-update.yaml` and `files/`. The builder validates revision syntax, not platform uniqueness; confirm that the revision is unused in the target application's control-plane records before upload.
+
+## Verify and package
+
+Read [references/verification.md](references/verification.md) before reporting completion.
+
+1. Run the project's native tests, syntax checks, and build with its pinned runtime.
+2. Re-run `audit_microapp.py` and resolve every hard error. Review each heuristic finding against actual code.
+3. Use the live `deployctl` contract:
+
+```text
+deployctl validate <project-dir>
+deployctl env-example -o <project-dir>/.env.example <project-dir>
+deployctl build [--env-file <local-nonproduction-env>] <project-dir>
+deployctl pack -o <output.zip> <project-dir>
+deployctl validate <output.zip>
+```
+
+4. Run `deployctl smoke --base-url <public-scheme-and-domain> <project-dir>` only against an explicitly authorized deployed target.
+5. Inspect the final ZIP listing, SHA-256 sidecar, and Git diff. Ensure no secret, production data, `.git`, `node_modules`, Compose, or root Nginx configuration entered the package.
+6. Do not claim Docker, Nginx, public-route, browser, data-backup, or rollback validation unless each was actually exercised.
+
+## Upload and publish safely
+
+Treat artifact creation as the default endpoint. Upload or publish only when the user explicitly requests that external mutation.
+
+- Code ZIP upload validates and creates a `READY` release; a new name creates the application, while an existing name requires a strictly higher SemVer and unchanged route/mode/persistence identity.
+- Complete the new release's environment form without exposing secrets. An active release cannot be edited or republished in place.
+- DataPatch upload validates and creates `READY`; it does not change live data until the separate “发布数据” action.
+- Never turn “upload” into “publish.” A publish action performs the real cutover and must remain explicit.
+- After an authorized publish, wait for the terminal state and report job steps, backup verification for stateful apps, health, public smoke, and any remaining browser acceptance.
+
+## Handoff
+
+Report: selected workflow, changed files, app SemVer or DataPatch revision, environment variable names only, entrypoints, persistence/migration impact, artifact path and SHA-256, validations actually run, environment blockers, and manual/production checks still outstanding. Never include secret values.

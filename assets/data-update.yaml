@@ -1,0 +1,12 @@
+apiVersion: deploy.xzd5/v1
+kind: DataPatch
+
+metadata:
+  app: sample-app
+  revision: 2026.08.05.1
+  description: 示例数据更新
+
+spec:
+  target: reports
+  mode: merge
+  delete: []

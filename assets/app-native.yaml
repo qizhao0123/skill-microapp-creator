@@ -1,0 +1,44 @@
+apiVersion: deploy.xzd5/v1
+kind: WebApp
+
+metadata:
+  name: sample-app
+  displayName: 示例应用
+  version: 1.0.0
+
+spec:
+  route:
+    path: /tools/sample-app
+    mode: native
+
+  container:
+    port: 3000
+
+  health:
+    path: /health
+    expectedStatus: 200
+
+  persistence:
+    mode: files
+    containerPath: /app/data
+    mutablePaths:
+      - reports
+
+  env: []
+
+  entrypoints:
+    - key: home
+      name: 首页
+      path: /
+      primary: true
+
+  smokeTests:
+    - path: /
+      method: GET
+      expectedStatus: 200
+      contentType: text/html
+
+  resources:
+    cpus: "0.5"
+    memory: 256m
+    pids: 128
