@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app-deployer.local/schemas/deploy.xzd5.v1.data-update.schema.json",
+  "title": "App Deployer data patch manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "deploy.xzd5/v1" },
+    "kind": { "const": "DataPatch" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["app", "revision"],
+      "properties": {
+        "app": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,40}$" },
+        "revision": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+        "description": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target"],
+      "properties": {
+        "target": { "$ref": "#/$defs/dataPath" },
+        "mode": { "const": "merge", "default": "merge" },
+        "delete": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/dataPath" },
+          "default": []
+        }
+      }
+    }
+  },
+  "$defs": {
+    "dataPath": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*$"
+    }
+  }
+}

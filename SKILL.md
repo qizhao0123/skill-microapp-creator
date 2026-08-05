@@ -17,7 +17,8 @@ Create or modify application repositories; do not modify App Deployer itself unl
    - `C:\Users\qizha\Documents\codex_project\app-deployer` when present.
 3. When the live root exists, completely read `docs/DEVELOPMENT_STANDARD.md`, `docs/APP_MANIFEST.md`, and the target app's current `app.yaml`. For a DataPatch, also completely read `docs/DATA_UPDATE.md`. Treat live code and schemas as newer than this skill.
 4. If upload/update behavior is ambiguous, inspect `internal/manifest`, `internal/archive`, `internal/datapatch`, and `internal/control/server.go`; do not infer platform behavior from generic Docker conventions.
-5. If the live root is unavailable, read [references/platform-contract.md](references/platform-contract.md) and explicitly report that current platform drift was not checked.
+5. If the live root is unavailable, read [references/platform-contract.md](references/platform-contract.md), [references/APP_MANIFEST.md](references/APP_MANIFEST.md), and [references/app.schema.json](references/app.schema.json). For a DataPatch, also read [references/DATA_UPDATE.md](references/DATA_UPDATE.md) and [references/data-update.schema.json](references/data-update.schema.json). Explicitly report that current platform drift was not checked.
+6. When the user asks how to install or invoke this skill, read [references/USAGE_GUIDE.md](references/USAGE_GUIDE.md).
 
 ## Classify the request
 
@@ -47,7 +48,7 @@ For a retrofit, record an evidence-based ledger with: current behavior, contract
 
 ## Apply the application contract
 
-Always read [references/platform-contract.md](references/platform-contract.md) before implementing.
+Always read [references/platform-contract.md](references/platform-contract.md) and [references/APP_MANIFEST.md](references/APP_MANIFEST.md) before implementing. Use [references/app.schema.json](references/app.schema.json) for editor or CI validation when the live schema is unavailable.
 
 1. Make dynamic services listen on platform `HOST` and `PORT`; the container must accept `0.0.0.0` traffic.
 2. Prefer `route.mode: native`. Make pages, assets, APIs, redirects, downloads, generated links, service-worker scope, and Cookie Path honor `APP_BASE_PATH`. Use `static-strip` only for a truly static site whose URLs are all relative.
@@ -83,6 +84,8 @@ Read the deployed/current manifest before editing. Keep `metadata.name`, `spec.r
 ### Data-only update
 
 Confirm that the application is active, uses `persistence.mode: files`, and that the active manifest allows the exact target. If the target is not allowed, first ship and activate a higher-SemVer code release that declares it.
+
+Read [references/DATA_UPDATE.md](references/DATA_UPDATE.md) and [references/data-update.schema.json](references/data-update.schema.json) before creating the patch when the live specification is unavailable.
 
 Build a canonical patch with:
 

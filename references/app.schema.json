@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app-deployer.local/schemas/deploy.xzd5.v1.app.schema.json",
+  "title": "App Deployer WebApp manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "deploy.xzd5/v1" },
+    "kind": { "const": "WebApp" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "displayName", "version"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{2,40}$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "version": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$" }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "container", "health", "persistence", "entrypoints"],
+      "properties": {
+        "route": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "mode"],
+          "properties": {
+            "path": { "$ref": "#/$defs/nonRootPath" },
+            "mode": { "enum": ["native", "static-strip"] }
+          }
+        },
+        "container": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["port"],
+          "properties": { "port": { "type": "integer", "minimum": 1, "maximum": 65535 } }
+        },
+        "health": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path"],
+          "properties": {
+            "path": { "$ref": "#/$defs/path" },
+            "expectedStatus": { "type": "integer", "minimum": 100, "maximum": 599, "default": 200 }
+          }
+        },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": { "enum": ["none", "files"] },
+            "containerPath": { "type": "string" },
+            "mutablePaths": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/dataPath" },
+              "default": []
+            }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "mode": { "const": "files" } }, "required": ["mode"] },
+              "then": { "required": ["containerPath"], "properties": { "containerPath": { "const": "/app/data" } } },
+              "else": { "properties": { "containerPath": { "maxLength": 0 }, "mutablePaths": { "maxItems": 0 } } }
+            }
+          ]
+        },
+        "env": {
+          "type": "array",
+          "default": [],
+          "items": { "$ref": "#/$defs/env" }
+        },
+        "entrypoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/entrypoint" }
+        },
+        "smokeTests": {
+          "type": "array",
+          "default": [],
+          "items": { "$ref": "#/$defs/smokeTest" }
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "cpus": { "type": "string", "pattern": "^(?:0\\.[1-9][0-9]*|[1-7](?:\\.[0-9]+)?|8(?:\\.0+)?)$", "default": "1.0" },
+            "memory": { "type": "string", "pattern": "^[1-9][0-9]{0,4}[mMgG]$", "default": "512m" },
+            "pids": { "type": "integer", "minimum": 32, "maximum": 4096, "default": 256 }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "pattern": "^/(?:[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*/?)?$"
+    },
+    "nonRootPath": {
+      "allOf": [
+        { "$ref": "#/$defs/path" },
+        { "not": { "const": "/" } },
+        { "not": { "pattern": "/$" } }
+      ]
+    },
+    "dataPath": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*$"
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "not": { "enum": ["HOST", "PORT", "APP_ENV", "APP_BASE_PATH", "APP_PUBLIC_URL", "APP_RELEASE_ID"] }
+        },
+        "type": { "enum": ["string", "integer", "boolean", "url", "enum"], "default": "string" },
+        "required": { "type": "boolean", "default": false },
+        "secret": { "type": "boolean", "default": false },
+        "default": { "type": "string" },
+        "description": { "type": "string", "maxLength": 500 },
+        "options": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "secret": { "const": true } }, "required": ["secret"] },
+          "then": { "not": { "required": ["default"] } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "enum" } }, "required": ["type"] },
+          "then": { "required": ["options"] },
+          "else": { "not": { "required": ["options"] } }
+        }
+      ]
+    },
+    "entrypoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "path"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,40}$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "path": { "$ref": "#/$defs/path" },
+        "primary": { "type": "boolean", "default": false },
+        "authRequired": { "type": "boolean", "default": false },
+        "description": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "smokeTest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "method": { "enum": ["GET", "HEAD"], "default": "GET" },
+        "expectedStatus": { "type": "integer", "minimum": 100, "maximum": 599, "default": 200 },
+        "contentType": { "type": "string", "maxLength": 100 }
+      }
+    }
+  }
+}
