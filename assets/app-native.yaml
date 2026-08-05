@@ -21,8 +21,9 @@ spec:
   persistence:
     mode: files
     containerPath: /app/data
-    mutablePaths:
-      - reports
+    # Fail closed. Add only exact operator-managed subtrees after completing
+    # the DATA_SAFETY.md inventory. Never add user data or a shared parent.
+    mutablePaths: []
 
   env: []
 

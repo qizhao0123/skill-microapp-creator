@@ -46,7 +46,9 @@ APP_RELEASE_ID=<immutable release id>
 - Put all file state under `/app/data`; put temporary files under `/tmp`.
 - Put initial data under `seed/data` and copy it only when `/app/data` is empty.
 - Use non-absolute, non-traversing, URL-safe relative `mutablePaths`. Do not duplicate, nest, or overlap them.
-- Keep code-coupled HTML, JS, CSS, templates, and assets in the code release. Put independently updated reports, PDFs, CSVs, or business images in declared mutable paths.
+- Default `mutablePaths` to empty. Keep protected user state outside every mutable path and keep operator-managed resources in exact, disjoint subtrees.
+- Never make a database, user upload/submission directory, or an ancestor containing protected data mutable. If user and operator records share one file, use an application-level transactional import instead of DataPatch.
+- Keep code-coupled HTML, JS, CSS, templates, and assets in the code release. Put independently updated operator-managed reports, PDFs, CSVs, or business images in reviewed mutable paths.
 - Treat external databases/object stores as unprotected until a native platform backup/restore adapter exists.
 
 ## Manifest fields

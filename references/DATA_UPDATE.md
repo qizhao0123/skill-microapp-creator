@@ -1,8 +1,10 @@
 # 数据更新包
 
-> 本文件同步自 `app-deployer/docs/DATA_UPDATE.md`（2026-08-05）。若工作区存在更新后的 App Deployer，以 live 文档、`data-update.schema.json` 和平台上传校验为准。
+> 本文件主体同步自 `app-deployer/docs/DATA_UPDATE.md`（2026-08-05）；示例目标已按本 skill 用户数据安全策略改为明确的后台资源目录。若工作区存在更新后的 App Deployer，以 live 文档、`data-update.schema.json` 和平台上传校验为准，但不得降低 [`DATA_SAFETY.md`](DATA_SAFETY.md) 的门禁。
 
 数据更新包用于只修改报告 JSON、CSV、PDF、业务图片等可变资源，不重新上传源码，也不重新构建 Docker 镜像。
+
+使用前必须完成 [`DATA_SAFETY.md`](DATA_SAFETY.md) 数据归属清单。DataPatch 只能面向完全由后台维护、且与用户数据目录不重叠的资源；未知或混合数据禁止更新。
 
 ## 应用声明
 
@@ -14,11 +16,10 @@ spec:
     mode: files
     containerPath: /app/data
     mutablePaths:
-      - reports
-      - resources/images
+      - operator-resources
 ```
 
-未声明的 `/app/data/db`、`uploads` 等目录不能通过数据更新包修改。`mutablePaths` 不能使用绝对路径、`..`，也不能互相重叠。
+未声明的 `/app/data/db`、`uploads` 等目录不能通过数据更新包修改。`mutablePaths` 不能使用绝对路径、`..`，也不能互相重叠。不能把用户数据目录或同时包含后台资源和用户数据的上级目录加入 `mutablePaths`。
 
 ## ZIP 结构
 
@@ -43,13 +44,13 @@ metadata:
   description: 更新七月份报告
 
 spec:
-  target: reports
+  target: operator-resources
   mode: merge
   delete:
     - expired-report.json
 ```
 
-`files/` 中的路径和 `spec.delete` 都相对于 `spec.target`。上述文件最终写入 `/app/data/reports`。删除必须明确声明；平台不会因为 ZIP 中缺少某个文件就自动删除服务器文件。同一路径不能既上传又删除。
+`files/` 中的路径和 `spec.delete` 都相对于 `spec.target`。上述文件最终写入 `/app/data/operator-resources`。同路径上传会完整覆盖旧文件。删除必须明确声明；平台不会因为 ZIP 中缺少某个文件就自动删除服务器文件。同一路径不能既上传又删除。
 
 可在数据包目录执行：
 

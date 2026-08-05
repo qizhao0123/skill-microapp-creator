@@ -11,13 +11,15 @@
 ## 1. New application
 
 1. Confirm the business users, pages, permissions, fields, imports/exports, entrypoints, state, environment variable names, route path, app identity, and initial version.
-2. Choose the smallest stack that satisfies the business need and preserve its lockfile.
-3. Implement platform host/port and native base-path behavior. Cover assets, APIs, redirects, download URLs, generated links, Cookie Path, and service workers.
-4. Add the no-auth GET health endpoint and read-only smoke routes.
-5. Decide `none` versus `files`. Put state under `/app/data`; use `seed/data` only for empty-directory initialization.
-6. Add only independently updated data subtrees to `mutablePaths`.
-7. Create `app.yaml`, Dockerfile, and `.dockerignore`; generate `.env.example` through `deployctl`.
-8. Test, validate, build when Docker is available, package, validate the ZIP, and inspect the archive.
+2. Complete the data inventory in [DATA_SAFETY.md](DATA_SAFETY.md). Classify every path as operator-managed, protected, seed, temporary, or external; unknown means protected.
+3. Choose the smallest stack that satisfies the business need and preserve its lockfile.
+4. Implement platform host/port and native base-path behavior. Cover assets, APIs, redirects, download URLs, generated links, Cookie Path, and service workers.
+5. Add the no-auth GET health endpoint and read-only smoke routes.
+6. Decide `none` versus `files`. Put state under `/app/data`; use `seed/data` only for empty-directory initialization.
+7. Keep `mutablePaths` empty for user-data-only apps. For mixed apps, physically separate operator resources from protected data and declare only the exact operator-managed subtrees.
+8. Run `audit_microapp.py --data-inventory <completed-inventory.json>`; resolve every app/version mismatch, mutable-path mismatch, overlap, or missing inventory error.
+9. Create `app.yaml`, Dockerfile, and `.dockerignore`; generate `.env.example` through `deployctl`.
+10. Test, validate, build when Docker is available, package, validate the ZIP, and inspect the archive.
 
 ## 2. Existing application retrofit
 
@@ -34,6 +36,8 @@ Audit before editing:
 - health behavior, entrypoints, and read-only acceptance paths.
 
 Preserve behavior and data. Add a one-time data migration only when necessary, make it idempotent, and document both backup and rollback. Never copy seed data over a non-empty `/app/data`. Do not delete legacy deployment files merely because the platform ZIP rejects them unless the user authorizes repository cleanup; excluding them from the package and removing them from active runtime are separate decisions.
+
+Create a before/after data inventory. Treat user databases, uploads, submissions, profiles, sessions, orders, and unknown data as protected. If operator resources and protected data share one file or directory, stop and separate them before enabling DataPatch; never authorize their shared parent.
 
 For base-path work, verify the full chain: browser URL -> HTML references -> client route/request -> server routing -> redirect/download response -> final visible behavior. A request reaching the server does not prove the prefixed browser flow works.
 
@@ -60,6 +64,9 @@ Preconditions:
 - its persistence mode is `files`;
 - the target equals or is nested under a declared `mutablePaths` entry;
 - no code, `app.yaml`, Dockerfile, runtime config, HTML, JS, CSS, or code-coupled template changes are included.
+- the current target inventory proves every payload path is operator-managed;
+- every protected path is listed and is disjoint from the target in both directions;
+- each existing payload path is identified as a replacement, and every deletion has explicit user approval.
 
 The ZIP root is exactly:
 
@@ -71,6 +78,10 @@ files/  # optional only for deletion-only patch
 The manifest is `deploy.xzd5/v1`, `kind: DataPatch`, with matching `metadata.app`, a data `revision` whose syntax is locally valid and whose uniqueness is confirmed against the control plane, optional single-line description, safe relative `spec.target`, `mode: merge`, and explicit safe relative deletion paths. Uploaded and deleted paths must not equal, contain, or be contained by one another.
 
 Missing files never imply deletion. A patch must add/replace at least one file or explicitly delete at least one path. A DataPatch does not change code SemVer or the active code release.
+
+The file overlay is not a business merge. A same-path upload truncates and replaces the live file, while `delete` removes the declared file or directory recursively. If a database or structured file mixes user and operator records, do not patch the file; use a transactional application import with domain validation.
+
+Build only with the control-plane-exported active `app.yaml` and a completed inventory JSON based on `assets/data-safety-inventory.json`. The builder must verify matching app/version, `files` persistence, non-empty active `mutablePaths`, exact agreement with `dataPatchAllowed: true` inventory paths, and no protected overlap. Retain its `.safety.json` sidecar outside the ZIP.
 
 For JSON-only requests, pass `--validate-json` to the builder. This checks that every payload file has a `.json` suffix, is UTF-8, and parses as JSON; it does not validate business fields or a domain schema. Run domain-specific checks separately.
 
@@ -93,3 +104,5 @@ DataPatch:
 4. Trigger “发布数据” only with explicit authorization and monitor to `SUCCEEDED` or `FAILED`.
 
 Stateful code releases and DataPatches stop the active container and require a readable, verified full `/app/data` backup before replacement. Do not call upload completion a production release.
+
+The backup protects technical rollback, not semantic correctness. A logically wrong replacement can pass health and smoke checks, so retain business validation evidence and the backup identifier for manual restoration.

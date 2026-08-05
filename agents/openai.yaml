@@ -1,4 +1,4 @@
 interface:
   display_name: "Micro App Creator"
-  short_description: "Create and retrofit App Deployer micro apps"
-  default_prompt: "Use $skill-microapp-creator to audit this project and create a compliant App Deployer delivery package."
+  short_description: "Build safe App Deployer micro apps"
+  default_prompt: "Use $skill-microapp-creator to classify and protect user data, audit this project, and create a compliant App Deployer delivery package."

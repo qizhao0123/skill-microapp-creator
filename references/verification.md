@@ -15,12 +15,13 @@ If Go is unavailable, use a current `bin/deployctl.exe`, `bin/deployctl`, or ser
 Run the applicable levels in order and report them separately:
 
 1. Project checks: pinned runtime, native unit tests, syntax/lint, build, migration/seed tests.
-2. Static contract: `audit_microapp.py`, live schemas, `deployctl validate <project>`.
-3. Container: check `docker version`, then `deployctl build [--env-file ...] <project>`. This builds an image, injects platform variables, mounts `/app/data` when needed, and checks health from a peer container.
-4. Package: `deployctl pack`, `deployctl validate <zip>`, archive listing, SHA-256 comparison, and secret scan.
-5. Deployed route: authorized `deployctl smoke --base-url <scheme-and-domain> <project>` after deployment.
-6. Browser/business: real prefixed entrypoints, assets, APIs, redirects, downloads, auth cookies, user-visible results, and supported devices.
-7. Stateful operations: actual verified backup, failure recovery, and rollback drill on the target server.
+2. Data safety: completed inventory, exact operator-managed paths, protected paths, no overlap, and no mixed-file DataPatch target.
+3. Static contract: `audit_microapp.py --data-inventory <completed-inventory.json>`, live schemas, `deployctl validate <project>`.
+4. Container: check `docker version`, then `deployctl build [--env-file ...] <project>`. This builds an image, injects platform variables, mounts `/app/data` when needed, and checks health from a peer container.
+5. Package: `deployctl pack`, `deployctl validate <zip>`, archive listing, SHA-256 comparison, and secret scan.
+6. Deployed route: authorized `deployctl smoke --base-url <scheme-and-domain> <project>` after deployment.
+7. Browser/business: real prefixed entrypoints, assets, APIs, redirects, downloads, auth cookies, user-visible results, and supported devices.
+8. Stateful operations: actual verified backup, failure recovery, and rollback drill on the target server.
 
 If Docker reports `open //./pipe/docker_engine: The system cannot find the file specified`, classify Docker Desktop/daemon as unavailable. Keep static checks, and list container/Nginx/public verification as outstanding.
 
@@ -49,6 +50,7 @@ For code releases, retain:
 - `deployctl validate`, build, pack, and final ZIP validation output as actually run;
 - artifact absolute path, bytes, SHA-256, and ZIP root listing;
 - environment variable names, entrypoints, and data directories without secret values.
+- the data inventory, protected paths, exact mutable paths, and proof that no mutable path is an ancestor or descendant of protected state.
 
 For DataPatches, retain:
 
@@ -57,6 +59,8 @@ For DataPatches, retain:
 - revision syntax plus control-plane uniqueness evidence, uploaded files, and explicit deletions;
 - artifact absolute path, bytes, SHA-256, and ZIP root listing;
 - confirmation that no source/app manifest files are present.
+- current target inventory; per-file `new` versus `replacement` classification; domain validation evidence; exact approved deletion list; protected-path non-overlap result; pre-publish backup identifier after publication.
+- active-manifest SHA-256, completed inventory SHA-256, and the generated `.safety.json` sidecar; keep all three outside the ZIP.
 
 ## Honest final status
 

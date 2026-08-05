@@ -15,11 +15,19 @@ import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
+from audit_microapp import parse_manifest
+
 
 APP_RE = re.compile(r"^[a-z][a-z0-9-]{2,40}$")
 REVISION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 SEGMENT_RE = re.compile(r"^[A-Za-z0-9._~-]+$")
 FIXED_TIME = (2020, 1, 1, 0, 0, 0)
+PROTECTED_NAME_SEGMENTS = {
+    "account", "accounts", "db", "database", "databases", "order", "orders",
+    "profile", "profiles", "response", "responses", "session", "sessions",
+    "submission", "submissions", "upload", "uploads", "user", "users",
+}
+BROAD_MUTABLE_SEGMENTS = {"data", "files", "runtime", "state", "storage"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,8 +35,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--app", required=True, help="active app metadata.name")
     parser.add_argument("--revision", required=True, help="data revision; syntax is checked locally, uniqueness must be confirmed in the control plane")
     parser.add_argument("--target", required=True, help="allowed path relative to /app/data")
+    parser.add_argument("--active-manifest", type=Path, required=True, help="current control-plane app.yaml exported from the active release")
+    parser.add_argument("--data-inventory", type=Path, required=True, help="completed DATA_SAFETY inventory JSON")
     parser.add_argument("--files", type=Path, help="directory whose contents will be placed under spec.target")
     parser.add_argument("--delete", action="append", default=[], help="path relative to spec.target; repeatable")
+    parser.add_argument("--confirm-delete", action="store_true", help="confirm that the user explicitly approved the exact --delete list")
     parser.add_argument("--description", default="", help="single-line description, at most 200 characters")
     parser.add_argument("--validate-json", action="store_true", help="require every payload file to be valid UTF-8 JSON")
     parser.add_argument("--output", type=Path, required=True, help="output .zip path")
@@ -103,6 +114,67 @@ def conflicts(uploaded: list[str], deleted: list[str]) -> list[tuple[str, str]]:
             if upload == delete or upload.startswith(delete + "/") or delete.startswith(upload + "/"):
                 result.append((upload, delete))
     return result
+
+
+def paths_overlap(left: str, right: str) -> bool:
+    return left == right or left.startswith(right + "/") or right.startswith(left + "/")
+
+
+def load_inventory(path: Path, app: str, active_version: str) -> tuple[dict[str, object], list[str], list[str]]:
+    path = path.expanduser().resolve()
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"data inventory is not UTF-8: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid data inventory JSON:{exc.lineno}:{exc.colno}: {exc.msg}") from exc
+    if not isinstance(value, dict):
+        raise ValueError("data inventory root must be an object")
+    if value.get("complete") is not True:
+        raise ValueError("data inventory must set complete=true after every persistent path is classified")
+    if value.get("app") != app:
+        raise ValueError("data inventory app does not match --app")
+    if value.get("activeVersion") != active_version:
+        raise ValueError("data inventory activeVersion does not match the active manifest")
+    entries = value.get("paths")
+    if not isinstance(entries, list):
+        raise ValueError("data inventory paths must be an array")
+    required_text = ("producer", "sourceOfTruth", "updateMechanism", "deleteAuthority", "backupRestore")
+    seen: set[str] = set()
+    mutable: list[str] = []
+    protected: list[str] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError(f"data inventory paths[{index}] must be an object")
+        item = safe_data_path(str(entry.get("path", "")), f"data inventory paths[{index}].path")
+        if item in seen:
+            raise ValueError(f"data inventory contains a duplicate path: {item}")
+        seen.add(item)
+        classification = entry.get("classification")
+        if classification not in {"operator-managed", "protected"}:
+            raise ValueError(f"data inventory path {item} must be operator-managed or protected")
+        for field in required_text:
+            if not isinstance(entry.get(field), str) or not entry[field].strip():
+                raise ValueError(f"data inventory path {item} requires non-empty {field}")
+        readers_writers = entry.get("readersWriters")
+        if not isinstance(readers_writers, list) or not readers_writers or not all(isinstance(row, str) and row.strip() for row in readers_writers):
+            raise ValueError(f"data inventory path {item} requires non-empty readersWriters")
+        if not isinstance(entry.get("mustSurviveRelease"), bool):
+            raise ValueError(f"data inventory path {item} requires boolean mustSurviveRelease")
+        if not isinstance(entry.get("dataPatchAllowed"), bool):
+            raise ValueError(f"data inventory path {item} requires boolean dataPatchAllowed")
+        if classification == "protected" and entry["dataPatchAllowed"]:
+            raise ValueError(f"protected data inventory path cannot allow DataPatch: {item}")
+        if classification == "operator-managed" and entry["dataPatchAllowed"]:
+            mutable.append(item)
+        if classification == "protected":
+            protected.append(item)
+    no_protected = value.get("noProtectedData")
+    if protected and no_protected is True:
+        raise ValueError("data inventory cannot set noProtectedData=true while protected paths exist")
+    if not protected and no_protected is not True:
+        raise ValueError("data inventory must set noProtectedData=true or list every protected path")
+    return value, mutable, protected
 
 
 def validate_json_files(files: list[tuple[Path, str]]) -> None:
@@ -184,10 +256,41 @@ def main() -> int:
             raise ValueError("--app must match ^[a-z][a-z0-9-]{2,40}$")
         if not REVISION_RE.fullmatch(args.revision):
             raise ValueError("--revision must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+        active_manifest = args.active_manifest.expanduser().resolve()
+        if not active_manifest.is_file():
+            raise ValueError(f"--active-manifest file not found: {active_manifest}")
+        active = parse_manifest(active_manifest)
+        if active.get("name") != args.app:
+            raise ValueError("--active-manifest metadata.name does not match --app")
+        if active.get("persistenceMode") != "files" or active.get("containerPath") != "/app/data":
+            raise ValueError("--active-manifest must use file persistence at /app/data")
+        active_version = str(active.get("version", ""))
+        manifest_mutable = list(active.get("mutablePaths") or [])
+        if not manifest_mutable:
+            raise ValueError("--active-manifest has empty mutablePaths; this app does not allow DataPatch")
+        inventory, inventory_mutable, protected_paths = load_inventory(args.data_inventory, args.app, active_version)
+        if set(manifest_mutable) != set(inventory_mutable):
+            raise ValueError("active manifest mutablePaths must exactly match inventory paths with dataPatchAllowed=true")
         target = safe_data_path(args.target, "--target")
+        target_segments = {part.lower() for part in PurePosixPath(target).parts}
+        risky = sorted(target_segments & PROTECTED_NAME_SEGMENTS)
+        if risky:
+            raise ValueError(f"--target uses a protected-data name and cannot be patched: {target} ({', '.join(risky)})")
+        broad = sorted(target_segments & BROAD_MUTABLE_SEGMENTS)
+        if broad:
+            raise ValueError(f"--target is too broad for fail-closed data updates: {target} ({', '.join(broad)})")
+        if not any(target == allowed or target.startswith(allowed + "/") for allowed in manifest_mutable):
+            raise ValueError("--target is not allowed by the active manifest mutablePaths")
+        for protected in protected_paths:
+            if paths_overlap(target, protected):
+                raise ValueError(f"--target overlaps protected data: {target} vs {protected}")
         deleted = [safe_data_path(item, "--delete") for item in args.delete]
         if len(set(deleted)) != len(deleted):
             raise ValueError("--delete contains duplicates")
+        if deleted and not args.confirm_delete:
+            raise ValueError("--delete requires --confirm-delete after explicit user approval of the exact deletion list")
+        if args.confirm_delete and not deleted:
+            raise ValueError("--confirm-delete requires at least one --delete path")
         if len(args.description) > 200 or any(ch in args.description for ch in "\x00\r\n"):
             raise ValueError("--description must be one line and at most 200 characters")
         files = collect_files(args.files)
@@ -207,12 +310,16 @@ def main() -> int:
 
         output = args.output.expanduser().resolve()
         sidecar = Path(str(output) + ".sha256")
-        if (output.exists() or sidecar.exists()) and not args.force:
+        safety_sidecar = Path(str(output) + ".safety.json")
+        if (output.exists() or sidecar.exists() or safety_sidecar.exists()) and not args.force:
             raise ValueError(f"output or sidecar already exists; pass --force to replace: {output}")
         if args.files is not None:
             files_root = args.files.expanduser().resolve()
             if output == files_root or files_root in output.parents:
                 raise ValueError("--output must not be inside --files")
+            inventory_path = args.data_inventory.expanduser().resolve()
+            if files_root in active_manifest.parents or files_root in inventory_path.parents:
+                raise ValueError("--active-manifest and --data-inventory must stay outside --files and the DataPatch ZIP")
         output.parent.mkdir(parents=True, exist_ok=True)
 
         with tempfile.TemporaryDirectory(prefix="datapatch-", dir=output.parent) as temp_dir:
@@ -232,8 +339,25 @@ def main() -> int:
 
         with zipfile.ZipFile(output, "r") as archive:
             members = archive.namelist()
+        safety_record = {
+            "app": args.app,
+            "activeVersion": active_version,
+            "revision": args.revision,
+            "target": target,
+            "activeManifestSHA256": sha256(active_manifest),
+            "dataInventorySHA256": sha256(args.data_inventory.expanduser().resolve()),
+            "mutablePaths": manifest_mutable,
+            "protectedPaths": protected_paths,
+            "payloadPaths": [rel for _, rel in files],
+            "approvedDeletions": deleted,
+            "dataInventoryComplete": inventory.get("complete") is True,
+        }
+        safety_sidecar.write_text(json.dumps(safety_record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
         print(f"PACKED {output}")
         print(f"SHA256 {digest}")
+        protected_summary = ",".join(protected_paths) if protected_paths else "none (explicitly inventoried)"
+        print(f"SAFETY active-version={active_version} operator-managed-target={target} protected-paths={protected_summary} deletions-confirmed={bool(deleted)}")
+        print(f"SAFETY_RECORD {safety_sidecar}")
         print(f"FILES {len(members)} EXPANDED {expanded} ARCHIVE {output.stat().st_size}")
         for member in members:
             print(f"  {member}")

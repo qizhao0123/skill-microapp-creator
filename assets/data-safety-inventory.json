@@ -1,0 +1,37 @@
+{
+  "complete": false,
+  "app": "sample-app",
+  "activeVersion": "1.0.0",
+  "noProtectedData": false,
+  "paths": [
+    {
+      "path": "operator-resources",
+      "classification": "operator-managed",
+      "producer": "authorized operator upload",
+      "readersWriters": [
+        "authorized operator writes",
+        "application reads"
+      ],
+      "sourceOfTruth": "approved business resource source",
+      "mustSurviveRelease": true,
+      "updateMechanism": "DataPatch",
+      "deleteAuthority": "named business data owner",
+      "backupRestore": "verified App Deployer /app/data backup and restore procedure",
+      "dataPatchAllowed": true
+    },
+    {
+      "path": "db",
+      "classification": "protected",
+      "producer": "application and users",
+      "readersWriters": [
+        "application reads and writes"
+      ],
+      "sourceOfTruth": "live application database",
+      "mustSurviveRelease": true,
+      "updateMechanism": "application transaction only",
+      "deleteAuthority": "not authorized through DataPatch",
+      "backupRestore": "verified App Deployer /app/data backup and restore procedure",
+      "dataPatchAllowed": false
+    }
+  ]
+}

@@ -7,6 +7,8 @@ metadata:
   description: 示例数据更新
 
 spec:
-  target: reports
+  # Replace only after the active manifest and DATA_SAFETY.md inventory prove
+  # this exact subtree is operator-managed and disjoint from protected data.
+  target: operator-resources
   mode: merge
   delete: []

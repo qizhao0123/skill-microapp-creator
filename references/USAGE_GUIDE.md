@@ -71,6 +71,9 @@ C:\Users\<用户名>\.codex\skills\skill-microapp-creator
 - 健康检查必须是不登录、无副作用的 GET；smoke test 只使用 GET/HEAD。
 - 应用 ZIP 根目录包含 `app.yaml`、Dockerfile、`.dockerignore`、源码和锁文件，不包含 Compose、Nginx、生产数据、`.git` 或 `node_modules`。
 - 上传只形成 `READY`，不会自动切换生产；发布或“发布数据”必须获得单独明确授权。
+- 用户数据库、用户上传、提交记录等默认为受保护数据，不能放进 `mutablePaths`；未知数据也按受保护处理。
+- 只产生用户数据、不需要资源数据更新的应用使用 `files` 和空 `mutablePaths`。
+- 同时存在后台资源和用户数据时必须分目录，只允许后台资源目录通过 DataPatch 更新。
 
 ## 工具
 
@@ -83,10 +86,10 @@ python scripts/audit_microapp.py <project-dir> --format markdown
 生成 DataPatch：
 
 ```text
-python scripts/build_data_patch.py --app <app-name> --revision <revision> --target <mutable-path> --files <data-dir> --validate-json --output <patch.zip>
+python scripts/build_data_patch.py --app <app-name> --revision <revision> --target <mutable-path> --active-manifest <active-app.yaml> --data-inventory <completed-inventory.json> --files <data-dir> --validate-json --output <patch.zip>
 ```
 
-`--validate-json` 只检查 `.json` 后缀、UTF-8 和 JSON 语法，不验证业务字段。revision 唯一性也必须在目标应用控制面确认。
+数据清单从 `assets/data-safety-inventory.json` 复制，必须匹配当前生效版本，并完整列出后台维护目录和受保护目录；确认完成后才能设置 `complete: true`。构建器会校验 Manifest 与清单边界并生成 `.safety.json` 外部证据文件。如包含 `--delete`，还必须在用户确认精确删除清单后增加 `--confirm-delete`。`--validate-json` 只检查 `.json` 后缀、UTF-8 和 JSON 语法，不验证业务字段。revision 唯一性也必须在目标应用控制面确认。
 
 ## 规范索引
 
@@ -97,5 +100,6 @@ python scripts/build_data_patch.py --app <app-name> --revision <revision> --targ
 - 平台核心约束摘要：[platform-contract.md](platform-contract.md)
 - 新建、改造、更新流程：[workflows.md](workflows.md)
 - 验证和交付边界：[verification.md](verification.md)
+- 用户数据安全门禁：[DATA_SAFETY.md](DATA_SAFETY.md)
 
 这些规范是随 skill 打包的快照。工作区存在 live `app-deployer` 时，优先读取 live 文档和实现，并使用当前源码版 `deployctl validate`，不要静默依赖可能过期的二进制。
