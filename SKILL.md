@@ -18,8 +18,9 @@ Create or modify application repositories; do not modify App Deployer itself unl
 3. When the live root exists, completely read `docs/DEVELOPMENT_STANDARD.md`, `docs/APP_MANIFEST.md`, and the target app's current `app.yaml`. For a DataPatch, also completely read `docs/DATA_UPDATE.md`. Treat live code and schemas as newer than this skill.
 4. If upload/update behavior is ambiguous, inspect `internal/manifest`, `internal/archive`, `internal/datapatch`, and `internal/control/server.go`; do not infer platform behavior from generic Docker conventions.
 5. Always read [references/DATA_SAFETY.md](references/DATA_SAFETY.md) for a new app, retrofit, stateful update, or DataPatch. This skill's fail-closed user-data policy remains mandatory even when live platform documentation is less strict.
-6. If the live root is unavailable, read [references/platform-contract.md](references/platform-contract.md), [references/APP_MANIFEST.md](references/APP_MANIFEST.md), and [references/app.schema.json](references/app.schema.json). For a DataPatch, also read [references/DATA_UPDATE.md](references/DATA_UPDATE.md) and [references/data-update.schema.json](references/data-update.schema.json). Explicitly report that current platform drift was not checked.
-7. When the user asks how to install or invoke this skill, read [references/USAGE_GUIDE.md](references/USAGE_GUIDE.md).
+6. Always read [references/release-hardening.md](references/release-hardening.md) before implementing or packaging a code release. It contains failure modes that static validation alone does not catch.
+7. If the live root is unavailable, read [references/platform-contract.md](references/platform-contract.md), [references/APP_MANIFEST.md](references/APP_MANIFEST.md), and [references/app.schema.json](references/app.schema.json). For a DataPatch, also read [references/DATA_UPDATE.md](references/DATA_UPDATE.md) and [references/data-update.schema.json](references/data-update.schema.json). Explicitly report that current platform drift was not checked.
+8. When the user asks how to install or invoke this skill, read [references/USAGE_GUIDE.md](references/USAGE_GUIDE.md).
 
 ## Classify the request
 
@@ -43,7 +44,7 @@ Execute the bundled read-only scanner:
 python <skill-dir>/scripts/audit_microapp.py <project-dir> --format markdown
 ```
 
-An initial audit of a file-persistent app may intentionally fail with an inventory-required error. Do not suppress it; complete the classification and rerun with the safety flags below. Then trace actual runtime entrypoints, lockfiles, listen host/port, routes, root-relative URLs, API clients, redirects, downloads, Cookie paths, secrets, persistent writes, startup initialization, health behavior, and all user-facing entrypoints. Treat scanner warnings as leads, not proof.
+An initial audit of a file-persistent app may intentionally fail with an inventory-required error. Do not suppress it; complete the classification and rerun with the safety flags below. Then trace actual runtime entrypoints, lockfiles, listen host/port, routes, root-relative URLs, API clients, redirects, downloads, Cookie paths, secrets, persistent writes, startup initialization, health behavior, framework route canonicalization, runtime UID/GID, Dockerfile `COPY --chown`, and all user-facing entrypoints. Treat scanner warnings as leads, not proof.
 
 For a retrofit, record an evidence-based ledger with: current behavior, contract gap, planned change, data migration impact, rollback, and verification. Stop for user confirmation only when a choice changes the data model, permissions, user flow, identity, route identity, persistence boundary, or external backup strategy.
 
@@ -84,6 +85,8 @@ Always read [references/platform-contract.md](references/platform-contract.md) a
    - keep user-generated and unknown data outside every mutable path.
 7. Treat external MySQL/PostgreSQL, object storage, or state outside `/app/data` as a release blocker until the platform has a native backup/restore adapter. Do not describe filesystem copying as protection for external state.
 8. Deliver root-level `app.yaml`, `Dockerfile`, `.dockerignore`, source, and lockfiles. Do not add uploader-controlled Compose, Nginx, shell deployment instructions, host ports/mounts, `privileged`, host network, or Docker Socket access.
+9. Keep the App Deployer package runtime-specific, not cloud-provider-specific: remove Cloudflare/Wrangler/Workerd/Vinext/Vite Cloudflare plugin runtime dependencies unless intentionally required and proven under App Deployer; avoid slow external registries and unused dependency trees; configure domestic Docker/package sources when the deployment network requires them.
+10. For file-persistent apps, design for the platform security model: `/app/data` is a platform bind mount; do not recursively modify protected data at startup; do not rely on root capabilities when the platform uses `cap_drop: ALL`; make final runtime files readable by the configured runtime user/group; use a cooperative umask for newly created data files.
 
 Start manifests from [assets/app-native.yaml](assets/app-native.yaml) or [assets/app-static-strip.yaml](assets/app-static-strip.yaml), and start `.dockerignore` from [assets/dockerignore.template](assets/dockerignore.template). Replace every example value and remove unused declarations.
 
@@ -101,7 +104,7 @@ Preserve existing behavior and user data. Inventory the live data before migrati
 
 ### Code or configuration update
 
-Read the deployed/current manifest before editing. Keep `metadata.name`, `spec.route.path`, `spec.route.mode`, and `spec.persistence.mode` unchanged for an existing application; the platform rejects changes to the last three app invariants. Raise `metadata.version` above the platform's latest release using SemVer. If route identity or persistence mode must change, stop and plan a new application identity or an explicit platform migration.
+Read the deployed/current manifest before editing. Keep `metadata.name`, `spec.route.path`, `spec.route.mode`, and `spec.persistence.mode` unchanged for an existing application; the platform rejects changes to the last three app invariants. Raise `metadata.version` above the platform's latest release using SemVer. If route identity or persistence mode must change, stop and plan a new application identity or an explicit platform migration. Environment values are release-scoped; if a published release has a wrong secret or business environment value, create a strictly higher SemVer release from the same code and fill the environment form again instead of editing server files or platform records.
 
 ### Data-only update
 
@@ -134,8 +137,9 @@ deployctl validate <output.zip>
 ```
 
 4. Run `deployctl smoke --base-url <public-scheme-and-domain> <project-dir>` only against an explicitly authorized deployed target.
-5. Inspect the final ZIP listing, SHA-256 sidecar, and Git diff. Ensure no secret, production data, `.git`, `node_modules`, Compose, or root Nginx configuration entered the package.
-6. Do not claim Docker, Nginx, public-route, browser, data-backup, or rollback validation unless each was actually exercised.
+5. Re-run the release-hardening checks from [references/release-hardening.md](references/release-hardening.md): dependency/source drift, Dockerfile runtime ownership, `/app/data` behavior, health side effects, base path, trailing slash behavior, Router versus browser URL usage, secret-link parsing, and release-environment immutability.
+6. Inspect the final ZIP listing, SHA-256 sidecar, and Git diff. Ensure no secret, production data, `.git`, `node_modules`, `.next`, local cache, Compose, root Nginx configuration, Cloudflare/Wrangler deployment files, or data-safety evidence sidecars entered the package.
+7. Do not claim Docker, Nginx, public-route, browser, data-backup, or rollback validation unless each was actually exercised.
 
 ## Upload and publish safely
 

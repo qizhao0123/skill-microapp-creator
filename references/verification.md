@@ -25,6 +25,20 @@ Run the applicable levels in order and report them separately:
 
 If Docker reports `open //./pipe/docker_engine: The system cannot find the file specified`, classify Docker Desktop/daemon as unavailable. Keep static checks, and list container/Nginx/public verification as outstanding.
 
+## Release-hardening checks
+
+Before packaging, also read and apply [release-hardening.md](release-hardening.md). At minimum, record evidence for:
+
+- dependency and lockfile registry hosts;
+- removal or isolation of Cloudflare/Wrangler/Workerd/Vinext/Vite Cloudflare runtime/deployment code unless intentionally required;
+- Docker base image source, build timeout risk, runtime `USER`, and final-layer file ownership;
+- `/app/data` writes, startup migrations, umask, and health side effects;
+- base-path behavior for pages, assets, APIs, redirects, downloads, cookies, and service workers;
+- route root behavior with and without trailing slash;
+- framework router navigation versus browser/network URLs;
+- internal secret-link parsing and session cookie path;
+- SemVer, immutable release environment values, upload state, and explicit publish state.
+
 ## Application package commands
 
 From the live App Deployer root, replace placeholders with absolute paths:
@@ -51,6 +65,7 @@ For code releases, retain:
 - artifact absolute path, bytes, SHA-256, and ZIP root listing;
 - environment variable names, entrypoints, and data directories without secret values.
 - the data inventory, protected paths, exact mutable paths, and proof that no mutable path is an ancestor or descendant of protected state.
+- release-hardening evidence, especially any items not validated because Docker, Nginx, public route, browser, or the production server was unavailable.
 
 For DataPatches, retain:
 

@@ -14,6 +14,12 @@ from typing import Any, Iterable
 
 
 SKIP_DIRS = {".git", ".hg", ".svn", "node_modules", "dist", "build", "vendor", "__pycache__", ".venv", "venv"}
+GENERATED_DIRS = {".next", ".nuxt", ".svelte-kit", ".vite", ".wrangler", ".vinext", ".npm-cache", ".pnpm-store"}
+PROVIDER_DEPLOYMENT_FILES = {
+    "wrangler.toml", "wrangler.json", "wrangler.jsonc", "_worker.js",
+    "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml",
+}
+PROVIDER_DEPLOYMENT_DIRS = {"worker", "workers", ".cloudflare", ".wrangler"}
 TEXT_SUFFIXES = {
     ".c", ".conf", ".cpp", ".cs", ".css", ".env", ".go", ".h", ".html",
     ".java", ".js", ".json", ".jsx", ".mjs", ".php", ".properties", ".py",
@@ -242,6 +248,10 @@ def check_required_and_forbidden(root: Path, files: Iterable[Path]) -> list[Find
             findings.append(Finding("error", "ROOT_RUNTIME_DATA", "Top-level runtime data cannot enter the code ZIP; use /app/data or seed/data.", rel))
         if parts[-1] == "data-safety-inventory.json" or lower.endswith(".zip.safety.json"):
             findings.append(Finding("error", "SAFETY_EVIDENCE_IN_PACKAGE", "Data-safety inventory and evidence sidecars must remain outside application and DataPatch payloads.", rel))
+        if parts[0] in GENERATED_DIRS:
+            findings.append(Finding("warning", "GENERATED_ARTIFACT", "Generated build/cache output is usually forbidden in source ZIPs unless intentionally shipped and validated.", rel))
+        if parts[0] in PROVIDER_DEPLOYMENT_DIRS or parts[-1] in PROVIDER_DEPLOYMENT_FILES:
+            findings.append(Finding("warning", "PROVIDER_DEPLOYMENT_ARTIFACT", "Cloud/provider deployment artifacts must not participate in App Deployer runtime unless intentionally required and validated.", rel))
     return findings
 
 
@@ -383,6 +393,107 @@ def heuristic_findings(root: Path, files: list[Path], manifest: dict[str, Any]) 
     state_names = (".sqlite", ".sqlite3", ".db", "/uploads/", "/reports/", "/generated/")
     if any(token in joined_names for token in state_names) or "data/" in joined_names:
         findings.append(Finding("warning", "STATE_PATHS", "State-like files or directories exist; trace every runtime read/write and migrate persistent state to /app/data."))
+    findings.extend(release_hardening_findings(root, files, manifest))
+    return findings
+
+
+def release_hardening_findings(root: Path, files: list[Path], manifest: dict[str, Any]) -> list[Finding]:
+    findings: list[Finding] = []
+    package_json = root / "package.json"
+    package_text = read_text(package_json) if package_json.is_file() else None
+    if package_text:
+        lower_package = package_text.lower()
+        cloud_tokens = ("cloudflare", "wrangler", "workerd", "vinext", "@cloudflare/vite-plugin")
+        for token in cloud_tokens:
+            if token in lower_package:
+                findings.append(Finding(
+                    "warning",
+                    "CLOUD_PROVIDER_DEPENDENCY",
+                    f"Package dependency/script references {token}; remove it unless it is intentionally required and App Deployer-validated.",
+                    "package.json",
+                ))
+                break
+    package_lock = root / "package-lock.json"
+    lock_text = read_text(package_lock) if package_lock.is_file() else None
+    dockerfile = root / "Dockerfile"
+    docker_text = read_text(dockerfile) if dockerfile.is_file() else None
+    if lock_text and "registry.npmjs.org" in lock_text and docker_text and "registry.npmmirror.com" in docker_text:
+        findings.append(Finding(
+            "warning",
+            "LOCKFILE_PUBLIC_REGISTRY",
+            "Dockerfile configures a domestic npm registry but package-lock still resolves packages from registry.npmjs.org.",
+            "package-lock.json",
+        ))
+    if docker_text:
+        if "docker.m.daocloud.io" not in docker_text and "registry.npmmirror.com" in (lock_text or ""):
+            findings.append(Finding(
+                "warning",
+                "DOCKER_BASE_PUBLIC_REGISTRY",
+                "Package manager uses domestic registry but Docker base image is not obviously pinned to a domestic mirror.",
+                "Dockerfile",
+            ))
+        user_match = re.search(r"(?m)^USER\s+(.+?)\s*$", docker_text)
+        chown_values = re.findall(r"--chown=([^\s]+)", docker_text)
+        if user_match and chown_values:
+            runtime_user = user_match.group(1).strip()
+            unique_chown = sorted(set(chown_values))
+            if "node:node" in unique_chown and runtime_user != "node" and runtime_user != "node:node":
+                findings.append(Finding(
+                    "warning",
+                    "RUNTIME_CHOWN_MISMATCH",
+                    f"Final image copies files as node:node but runtime USER is {runtime_user}; verify files are readable under cap_drop/no-new-privileges.",
+                    "Dockerfile",
+                ))
+        if re.search(r"(?mi)^\s*(RUN|CMD|ENTRYPOINT).*(chown|chmod)\s+(-R|--recursive).*/app/data", docker_text):
+            findings.append(Finding(
+                "warning",
+                "RECURSIVE_DATA_PERMISSION_CHANGE",
+                "Dockerfile appears to recursively change /app/data; startup/runtime must not rewrite protected user data.",
+                "Dockerfile",
+            ))
+    next_config = next((path for path in files if relative(path, root).lower() in {"next.config.js", "next.config.mjs", "next.config.ts"}), None)
+    if next_config and manifest.get("routeMode") == "native":
+        text = read_text(next_config) or ""
+        if "trailingSlash" not in text and "skipTrailingSlashRedirect" not in text:
+            findings.append(Finding(
+                "warning",
+                "NEXT_TRAILING_SLASH_UNVERIFIED",
+                "Next.js native app has no explicit trailing-slash handling; test app-root behavior with and without slash against generated Nginx.",
+                relative(next_config, root),
+            ))
+    router_with_base = re.compile(r"router\.(?:push|replace|prefetch)\s*\(\s*(?:withBasePath|basePath|appBasePath)", re.I)
+    match = first_match(root, files, router_with_base)
+    if match:
+        findings.append(Finding(
+            "warning",
+            "ROUTER_BASEPATH_DOUBLE_PREFIX",
+            "Framework router navigation appears to use a base-path helper; verify it does not double-prefix public URLs.",
+            match.path,
+            match.line,
+            match.evidence,
+        ))
+    health_mutation = re.compile(r"(?:mkdir|mkdirSync|CREATE\s+TABLE|INSERT\s+INTO|UPDATE\s+|DELETE\s+FROM|writeFile|appendFile)", re.I)
+    for path in files:
+        rel = relative(path, root)
+        if "health" not in rel.lower():
+            continue
+        text = read_text(path)
+        if text is None:
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            if health_mutation.search(line):
+                evidence = line.strip()
+                if len(evidence) > 180:
+                    evidence = evidence[:177] + "..."
+                findings.append(Finding(
+                    "warning",
+                    "HEALTH_SIDE_EFFECT",
+                    "Health endpoint contains a write/DDL-looking operation; health must be side-effect-free.",
+                    rel,
+                    number,
+                    evidence,
+                ))
+                return findings
     return findings
 
 

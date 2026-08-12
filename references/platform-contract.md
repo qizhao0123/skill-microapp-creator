@@ -29,6 +29,7 @@ APP_RELEASE_ID=<immutable release id>
 - Write logs to stdout/stderr and redact passwords, tokens, cookies, and environment dumps.
 - Provide an unauthenticated, side-effect-free GET health path.
 - Restrict smoke tests to GET/HEAD.
+- Treat active release environment values as immutable. A wrong environment value requires a new higher-SemVer release and a new environment form; do not edit live release directories or platform records by hand.
 
 ## Environment declarations
 
@@ -44,6 +45,7 @@ APP_RELEASE_ID=<immutable release id>
 - Use `persistence.mode: none` only for stateless apps; omit `containerPath` and `mutablePaths`.
 - Use `persistence.mode: files` only with `containerPath: /app/data`.
 - Put all file state under `/app/data`; put temporary files under `/tmp`.
+- Treat `/app/data` as a platform bind mount. Do not recursively change its descendants at startup, and do not assume UID 0 has normal root capabilities when the platform drops capabilities.
 - Put initial data under `seed/data` and copy it only when `/app/data` is empty.
 - Use non-absolute, non-traversing, URL-safe relative `mutablePaths`. Do not duplicate, nest, or overlap them.
 - Default `mutablePaths` to empty. Keep protected user state outside every mutable path and keep operator-managed resources in exact, disjoint subtrees.
@@ -71,6 +73,6 @@ Dockerfile
 seed/data/  # optional, first initialization only
 ```
 
-Reject an extra outer directory, real `.env`/`.env.*` other than `.env.example`, root runtime `data`/`.data`, Compose files, root `nginx*.conf`, `.git`, `node_modules`, symlinks, special files, and path traversal. Platform limits include archive bytes, expanded bytes, file count, and per-file compression ratio.
+Reject an extra outer directory, real `.env`/`.env.*` other than `.env.example`, root runtime `data`/`.data`, Compose files, root `nginx*.conf`, `.git`, `node_modules`, local build caches, `.next` unless intentionally shipped as a prebuilt artifact, Cloudflare/Wrangler deployment files unless intentionally required and validated, symlinks, special files, and path traversal. Platform limits include archive bytes, expanded bytes, file count, and per-file compression ratio.
 
 The platform generates Compose and Nginx. Do not require host ports, arbitrary host mounts, `privileged`, host networking, or Docker Socket access.
