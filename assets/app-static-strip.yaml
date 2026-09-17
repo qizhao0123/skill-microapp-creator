@@ -21,6 +21,12 @@ spec:
   persistence:
     mode: none
 
+  accessControl:
+    enabled: false
+    # When true, copy the exact provider policy ID; never infer it from route/name.
+    # provider: learning-platform
+    # appId: <exact-policy-id>
+
   env: []
 
   entrypoints:

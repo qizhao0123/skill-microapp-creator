@@ -25,6 +25,12 @@ spec:
     # the DATA_SAFETY.md inventory. Never add user data or a shared parent.
     mutablePaths: []
 
+  accessControl:
+    enabled: false
+    # When true, copy the exact provider policy ID; never infer it from route/name.
+    # provider: learning-platform
+    # appId: <exact-policy-id>
+
   env: []
 
   entrypoints:

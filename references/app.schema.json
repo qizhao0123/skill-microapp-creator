@@ -69,6 +69,22 @@
             }
           ]
         },
+        "accessControl": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "provider": { "const": "learning-platform" },
+            "appId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+              "then": { "required": ["provider", "appId"] }
+            }
+          ],
+          "default": { "enabled": false }
+        },
         "env": {
           "type": "array",
           "default": [],

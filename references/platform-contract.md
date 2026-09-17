@@ -11,6 +11,15 @@ Use this as a bundled snapshot of `deploy.xzd5/v1`. Prefer the live App Deployer
 - Use `static-strip` only for fully static content with relative asset/navigation URLs. The proxy strips the prefix.
 - For an existing application, keep route path, route mode, and persistence mode unchanged. A new release version must be greater than the latest uploaded version.
 
+## Access control
+
+- Omit `spec.accessControl` or set `enabled: false` for public access.
+- When enabled, set `provider: learning-platform` and an exact provider policy `appId`; syntax validity does not prove policy identity.
+- Record the App Deployer application ID, `metadata.name`, route path, and provider AppID separately. In the current deployment convention the provider AppID is the 32-character App Deployer application ID unless live provider evidence explicitly says otherwise.
+- The callback is `<scheme>://<host><route.path>/__app-deployer-access/callback`, without a trailing slash or query.
+- Static validation does not call the provider. Publish preflight fails closed on missing configuration, missing/disabled/no-tag policy, provider errors, and TLS failures.
+- Every access-control change requires a strictly higher SemVer release. Read [ACCESS_CONTROL.md](ACCESS_CONTROL.md) for bootstrap and acceptance workflow.
+
 ## Runtime
 
 The platform injects:

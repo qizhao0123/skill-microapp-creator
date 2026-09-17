@@ -1,6 +1,6 @@
 ---
 name: skill-microapp-creator
-description: Create, retrofit, update, validate, and package internal Web apps for the controlled App Deployer contract (`deploy.xzd5/v1`) while protecting user-generated data. Use when a user asks to create a micro app for app-deployer, make an existing Web app compatible with the publisher, classify `/app/data`, isolate operator-managed resources from user data, author `app.yaml`, prepare a higher-SemVer code/config release, create a persistent-data-only DataPatch ZIP, or guide the upload and manual publish workflow.
+description: Create, retrofit, update, validate, and package internal Web apps for the controlled App Deployer contract (`deploy.xzd5/v1`) while protecting user-generated data and configuring learning-platform access policies. Use when a user asks to create a micro app for app-deployer, make an existing Web app compatible with the publisher, configure `accessControl`, distinguish the provider AppID from the route and App Deployer application ID, classify `/app/data`, author `app.yaml`, prepare a higher-SemVer code/config release, create a persistent-data-only DataPatch ZIP, or guide the upload and manual publish workflow.
 ---
 
 # App Deployer Micro App Creator
@@ -15,12 +15,13 @@ Create or modify application repositories; do not modify App Deployer itself unl
    - `APP_DEPLOYER_DIR`;
    - a sibling `app-deployer` directory near the target project;
    - `C:\Users\qizha\Documents\codex_project\app-deployer` when present.
-3. When the live root exists, completely read `docs/DEVELOPMENT_STANDARD.md`, `docs/APP_MANIFEST.md`, and the target app's current `app.yaml`. For a DataPatch, also completely read `docs/DATA_UPDATE.md`. Treat live code and schemas as newer than this skill.
-4. If upload/update behavior is ambiguous, inspect `internal/manifest`, `internal/archive`, `internal/datapatch`, and `internal/control/server.go`; do not infer platform behavior from generic Docker conventions.
+3. When the live root exists, completely read `docs/DEVELOPMENT_STANDARD.md`, `docs/APP_MANIFEST.md`, and the target app's current `app.yaml`. For a DataPatch, also completely read `docs/DATA_UPDATE.md`. For access control, also inspect the active application record, current release manifest, environment profile, and learning-platform policy record. Treat live code and schemas as newer than this skill.
+4. If upload/update or access behavior is ambiguous, inspect `internal/manifest`, `internal/archive`, `internal/datapatch`, `internal/access`, `internal/deploy/render.go`, and `internal/control/server.go`; do not infer platform behavior from generic Docker or OAuth conventions.
 5. Always read [references/DATA_SAFETY.md](references/DATA_SAFETY.md) for a new app, retrofit, stateful update, or DataPatch. This skill's fail-closed user-data policy remains mandatory even when live platform documentation is less strict.
 6. Always read [references/release-hardening.md](references/release-hardening.md) before implementing or packaging a code release. It contains failure modes that static validation alone does not catch.
-7. If the live root is unavailable, read [references/platform-contract.md](references/platform-contract.md), [references/APP_MANIFEST.md](references/APP_MANIFEST.md), and [references/app.schema.json](references/app.schema.json). For a DataPatch, also read [references/DATA_UPDATE.md](references/DATA_UPDATE.md) and [references/data-update.schema.json](references/data-update.schema.json). Explicitly report that current platform drift was not checked.
-8. When the user asks how to install or invoke this skill, read [references/USAGE_GUIDE.md](references/USAGE_GUIDE.md).
+7. For any access-controlled app or authorization diagnosis, completely read [references/ACCESS_CONTROL.md](references/ACCESS_CONTROL.md). Its identity-equality and fail-closed rules are mandatory; verify drift against the live implementation when available.
+8. If the live root is unavailable, read [references/platform-contract.md](references/platform-contract.md), [references/APP_MANIFEST.md](references/APP_MANIFEST.md), and [references/app.schema.json](references/app.schema.json). For a DataPatch, also read [references/DATA_UPDATE.md](references/DATA_UPDATE.md) and [references/data-update.schema.json](references/data-update.schema.json). Explicitly report that current platform drift was not checked.
+9. When the user asks how to install or invoke this skill, read [references/USAGE_GUIDE.md](references/USAGE_GUIDE.md).
 
 ## Classify the request
 
@@ -31,6 +32,7 @@ Use one primary path:
 | Build a new app | Create a compliant repository and first SemVer code release |
 | Make an old app compatible | Audit first, preserve behavior/data, then retrofit |
 | Change code, HTML, CSS, JS, templates, image assets tied to code, `app.yaml`, or production env values | Create a higher SemVer code release |
+| Enable, disable, or change `spec.accessControl`, its provider, or policy AppID | Create a higher SemVer code/config release; prove the exact policy ID before packaging |
 | Change only files under an active manifest's `persistence.mutablePaths` | Create an independent DataPatch revision; do not change app SemVer |
 | Upload or publish an artifact | Require explicit authorization; keep upload/validation separate from manual publish/cutover |
 
@@ -42,6 +44,12 @@ Execute the bundled read-only scanner:
 
 ```text
 python <skill-dir>/scripts/audit_microapp.py <project-dir> --format markdown
+```
+
+For an access-controlled release, pass the policy identifier copied from the provider record or App Deployer application record, never one inferred from a route or slug:
+
+```text
+python <skill-dir>/scripts/audit_microapp.py <project-dir> --require-access-control --expected-access-app-id <exact-policy-id> --format markdown
 ```
 
 An initial audit of a file-persistent app may intentionally fail with an inventory-required error. Do not suppress it; complete the classification and rerun with the safety flags below. Then trace actual runtime entrypoints, lockfiles, listen host/port, routes, root-relative URLs, API clients, redirects, downloads, Cookie paths, secrets, persistent writes, startup initialization, health behavior, framework route canonicalization, runtime UID/GID, Dockerfile `COPY --chown`, and all user-facing entrypoints. Treat scanner warnings as leads, not proof.
@@ -87,6 +95,7 @@ Always read [references/platform-contract.md](references/platform-contract.md) a
 8. Deliver root-level `app.yaml`, `Dockerfile`, `.dockerignore`, source, and lockfiles. Do not add uploader-controlled Compose, Nginx, shell deployment instructions, host ports/mounts, `privileged`, host network, or Docker Socket access.
 9. Keep the App Deployer package runtime-specific, not cloud-provider-specific: remove Cloudflare/Wrangler/Workerd/Vinext/Vite Cloudflare plugin runtime dependencies unless intentionally required and proven under App Deployer; avoid slow external registries and unused dependency trees; configure domestic Docker/package sources when the deployment network requires them.
 10. For file-persistent apps, design for the platform security model: `/app/data` is a platform bind mount; do not recursively modify protected data at startup; do not rely on root capabilities when the platform uses `cap_drop: ALL`; make final runtime files readable by the configured runtime user/group; use a cooperative umask for newly created data files.
+11. Treat access control as a release contract, not application code: keep the App Deployer application ID, `metadata.name`, `spec.route.path`, and `spec.accessControl.appId` as four separately recorded values; require the manifest AppID to exactly equal the learning-platform policy AppID; never substitute a path/name merely because it passes the schema.
 
 Start manifests from [assets/app-native.yaml](assets/app-native.yaml) or [assets/app-static-strip.yaml](assets/app-static-strip.yaml), and start `.dockerignore` from [assets/dockerignore.template](assets/dockerignore.template). Replace every example value and remove unused declarations.
 
@@ -105,6 +114,10 @@ Preserve existing behavior and user data. Inventory the live data before migrati
 ### Code or configuration update
 
 Read the deployed/current manifest before editing. Keep `metadata.name`, `spec.route.path`, `spec.route.mode`, and `spec.persistence.mode` unchanged for an existing application; the platform rejects changes to the last three app invariants. Raise `metadata.version` above the platform's latest release using SemVer. If route identity or persistence mode must change, stop and plan a new application identity or an explicit platform migration. Environment values are release-scoped; if a published release has a wrong secret or business environment value, create a strictly higher SemVer release from the same code and fill the environment form again instead of editing server files or platform records.
+
+### Access-controlled application
+
+Read [references/ACCESS_CONTROL.md](references/ACCESS_CONTROL.md) and record all four identities before editing. In this deployment convention, the learning-platform policy AppID is the 32-character App Deployer application ID unless current provider evidence explicitly establishes another convention. Match the policy and manifest exactly, use the generated callback URL, confirm the control-plane learning-platform environment is complete, and raise SemVer for every access-control change. For a new app whose application ID does not exist until upload, use the documented two-release bootstrap flow: upload the initial package only to create a `READY` app record, do not publish it, then create the policy and upload a higher-SemVer access-controlled package with the actual ID.
 
 ### Data-only update
 
@@ -125,7 +138,7 @@ Start the inventory from [assets/data-safety-inventory.json](assets/data-safety-
 Read [references/verification.md](references/verification.md) before reporting completion.
 
 1. Run the project's native tests, syntax checks, and build with its pinned runtime.
-2. Re-run `audit_microapp.py` with the classified operator-managed and protected paths. Resolve every hard error and review each heuristic finding against actual code.
+2. Re-run `audit_microapp.py` with the classified operator-managed and protected paths. For access-controlled releases, also pass `--require-access-control --expected-access-app-id <exact-policy-id>`. Resolve every hard error and review each heuristic finding against actual code.
 3. Use the live `deployctl` contract:
 
 ```text
@@ -139,13 +152,15 @@ deployctl validate <output.zip>
 4. Run `deployctl smoke --base-url <public-scheme-and-domain> <project-dir>` only against an explicitly authorized deployed target.
 5. Re-run the release-hardening checks from [references/release-hardening.md](references/release-hardening.md): dependency/source drift, Dockerfile runtime ownership, `/app/data` behavior, health side effects, base path, trailing slash behavior, Router versus browser URL usage, secret-link parsing, and release-environment immutability.
 6. Inspect the final ZIP listing, SHA-256 sidecar, and Git diff. Ensure no secret, production data, `.git`, `node_modules`, `.next`, local cache, Compose, root Nginx configuration, Cloudflare/Wrangler deployment files, or data-safety evidence sidecars entered the package.
-7. Do not claim Docker, Nginx, public-route, browser, data-backup, or rollback validation unless each was actually exercised.
+7. If access control is enabled, distinguish static manifest/ZIP validation from publish preflight and deployed browser acceptance. Verify the exact callback, policy state/tags, generated gateway redirect, and private-session behavior; never bypass a TLS error or claim policy validation from `deployctl validate` alone.
+8. Do not claim Docker, Nginx, public-route, browser, authorization, data-backup, or rollback validation unless each was actually exercised.
 
 ## Upload and publish safely
 
 Treat artifact creation as the default endpoint. Upload or publish only when the user explicitly requests that external mutation.
 
 - Code ZIP upload validates and creates a `READY` release; a new name creates the application, while an existing name requires a strictly higher SemVer and unchanged route/mode/persistence identity.
+- Enabling access control is fail-closed at publish preflight: missing provider configuration, missing/disabled policy, no active tags, TLS/provider failure, or an AppID mismatch blocks publish. Upload success alone does not prove authorization works.
 - Complete the new release's environment form without exposing secrets. An active release cannot be edited or republished in place.
 - DataPatch upload validates and creates `READY`; it does not change live data until the separate “发布数据” action.
 - Never turn “upload” into “publish.” A publish action performs the real cutover and must remain explicit.
@@ -153,4 +168,4 @@ Treat artifact creation as the default endpoint. Upload or publish only when the
 
 ## Handoff
 
-Report: selected workflow, changed files, app SemVer or DataPatch revision, environment variable names only, entrypoints, the completed data inventory, protected paths, exact mutable paths, overwrite/delete review, persistence/migration impact, artifact path and SHA-256, validations actually run, environment blockers, and manual/production checks still outstanding. Never include secret values.
+Report: selected workflow, changed files, app SemVer or DataPatch revision, environment variable names only, entrypoints, the completed data inventory, protected paths, exact mutable paths, overwrite/delete review, persistence/migration impact, artifact path and SHA-256, validations actually run, environment blockers, and manual/production checks still outstanding. For access control, additionally report the four identity values, policy state/tags evidence, exact callback URL, manifest AppID equality result, publish-preflight result, and private-browser acceptance status. Never include secret values.

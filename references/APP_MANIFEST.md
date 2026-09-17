@@ -1,6 +1,6 @@
 # `app.yaml` 契约
 
-> 本文件主体同步自 `app-deployer/docs/APP_MANIFEST.md`（2026-08-05）；示例的 `mutablePaths` 已按本 skill 用户数据安全策略默认置空。若工作区存在更新后的 App Deployer，以 live 文档、`app.schema.json` 和 `deployctl validate` 为准，但不得降低 [`DATA_SAFETY.md`](DATA_SAFETY.md) 的门禁。
+> 本文件主体同步自 `app-deployer/docs/APP_MANIFEST.md`（2026-09-17）；示例的 `mutablePaths` 已按本 skill 用户数据安全策略默认置空。若工作区存在更新后的 App Deployer，以 live 文档、`app.schema.json` 和 `deployctl validate` 为准，但不得降低 [`DATA_SAFETY.md`](DATA_SAFETY.md) 的门禁。
 
 编辑器和 CI 可直接使用 [`app.schema.json`](./app.schema.json)；最终仍以 `deployctl validate` 的运行时校验为准。
 
@@ -29,6 +29,12 @@ spec:
     mode: files
     containerPath: /app/data
     mutablePaths: []
+
+  accessControl:
+    enabled: false
+    # enabled: true 时必须与学习平台策略使用完全相同的 AppID。
+    # provider: learning-platform
+    # appId: <exact-policy-id>
 
   env:
     - name: ADMIN_PASSWORD
@@ -66,6 +72,9 @@ spec:
 - `route.path` 是无尾斜杠的绝对二级目录，不能包含查询串、编码路径、双斜杠或 `..`。
 - `route.mode` 只能为 `native` 或 `static-strip`；动态应用使用 `native`。
 - `health` 只允许无副作用 GET。
+- `accessControl` 可省略或设为 `enabled: false`，此时保持公开访问。
+- `accessControl.enabled=true` 时必须声明 `provider: learning-platform` 和安全的 `appId`；发布前平台会校验策略，策略缺失、停用、无标签或服务异常都会阻止发布。
+- `accessControl.appId` 是提供方策略键，不等同于 `metadata.name` 或 `route.path`。当前部署约定使用 App Deployer 的 32 位应用 ID，除非实时提供方证据明确采用另一约定；详见 [`ACCESS_CONTROL.md`](ACCESS_CONTROL.md)。
 - `env` 只能声明变量结构，敏感变量不得有默认值。
 - `entrypoints.path` 相对于应用公共路径解析，发布成功后控制面生成可复制的完整 URL。
 - `persistence.mode=files` 时 `containerPath` 必须严格为 `/app/data`。

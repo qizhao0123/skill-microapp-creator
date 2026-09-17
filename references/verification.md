@@ -16,12 +16,13 @@ Run the applicable levels in order and report them separately:
 
 1. Project checks: pinned runtime, native unit tests, syntax/lint, build, migration/seed tests.
 2. Data safety: completed inventory, exact operator-managed paths, protected paths, no overlap, and no mixed-file DataPatch target.
-3. Static contract: `audit_microapp.py --data-inventory <completed-inventory.json>`, live schemas, `deployctl validate <project>`.
-4. Container: check `docker version`, then `deployctl build [--env-file ...] <project>`. This builds an image, injects platform variables, mounts `/app/data` when needed, and checks health from a peer container.
-5. Package: `deployctl pack`, `deployctl validate <zip>`, archive listing, SHA-256 comparison, and secret scan.
-6. Deployed route: authorized `deployctl smoke --base-url <scheme-and-domain> <project>` after deployment.
-7. Browser/business: real prefixed entrypoints, assets, APIs, redirects, downloads, auth cookies, user-visible results, and supported devices.
-8. Stateful operations: actual verified backup, failure recovery, and rollback drill on the target server.
+3. Static contract: `audit_microapp.py --data-inventory <completed-inventory.json>`, live schemas, `deployctl validate <project>`. For access control, add `--require-access-control --expected-access-app-id <exact-policy-id>`.
+4. Provider preflight when access control is enabled: exact AppID/callback, control-plane environment names, valid TLS, active policy, and active tags. Static validation does not cover this level.
+5. Container: check `docker version`, then `deployctl build [--env-file ...] <project>`. This builds an image, injects platform variables, mounts `/app/data` when needed, and checks health from a peer container.
+6. Package: `deployctl pack`, `deployctl validate <zip>`, archive listing, SHA-256 comparison, and secret scan.
+7. Deployed route: authorized `deployctl smoke --base-url <scheme-and-domain> <project>` after deployment; an access-controlled route must redirect through the generated gateway or reject unauthenticated access.
+8. Browser/business: real prefixed entrypoints, assets, APIs, redirects, downloads, auth cookies, user-visible results, and supported devices. Use a private session for first-access authorization acceptance.
+9. Stateful operations: actual verified backup, failure recovery, and rollback drill on the target server.
 
 If Docker reports `open //./pipe/docker_engine: The system cannot find the file specified`, classify Docker Desktop/daemon as unavailable. Keep static checks, and list container/Nginx/public verification as outstanding.
 
@@ -37,7 +38,8 @@ Before packaging, also read and apply [release-hardening.md](release-hardening.m
 - route root behavior with and without trailing slash;
 - framework router navigation versus browser/network URLs;
 - internal secret-link parsing and session cookie path;
-- SemVer, immutable release environment values, upload state, and explicit publish state.
+- SemVer, immutable release environment values, upload state, and explicit publish state;
+- for access control: the four identity values, exact callback, policy state/tags, required control-plane environment names, TLS result, publish preflight, and private-browser redirect/session behavior.
 
 ## Application package commands
 
@@ -63,7 +65,8 @@ For code releases, retain:
 - project test output;
 - `deployctl validate`, build, pack, and final ZIP validation output as actually run;
 - artifact absolute path, bytes, SHA-256, and ZIP root listing;
-- environment variable names, entrypoints, and data directories without secret values.
+- environment variable names, entrypoints, and data directories without secret values;
+- for access-controlled apps, the App Deployer application ID, manifest name, route path, provider AppID, exact-match result, callback URL, and provider/publish/browser evidence.
 - the data inventory, protected paths, exact mutable paths, and proof that no mutable path is an ancestor or descendant of protected state.
 - release-hardening evidence, especially any items not validated because Docker, Nginx, public route, browser, or the production server was unavailable.
 
@@ -85,6 +88,7 @@ Separate:
 - container-validated locally;
 - uploaded and `READY`;
 - published and terminally successful;
-- real Nginx/public-route/browser/device/data-backup/rollback acceptance.
+- real Nginx/public-route/browser/device/data-backup/rollback acceptance;
+- access policy preflight and private-session authorization acceptance.
 
 Do not turn an earlier level into evidence for a later level.

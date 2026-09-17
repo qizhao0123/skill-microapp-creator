@@ -1,6 +1,6 @@
 # skill-microapp-creator 补充使用说明
 
-本 skill 用于按 App Deployer `deploy.xzd5/v1` 契约创建新 Web 应用、改造旧应用、发布代码或环境配置更新，以及生成只更新持久化数据的 DataPatch。
+本 skill 用于按 App Deployer `deploy.xzd5/v1` 契约创建新 Web 应用、改造旧应用、配置学习平台访问策略、发布代码或环境配置更新，以及生成只更新持久化数据的 DataPatch。
 
 ## 安装
 
@@ -42,6 +42,12 @@ C:\Users\<用户名>\.codex\skills\skill-microapp-creator
 [本次需求]
 ```
 
+### 创建或修正授权版
+
+```text
+使用 $skill-microapp-creator 为当前应用开启学习平台授权。先从发布器应用记录和授权后台读取真实 ID，分别记录发布器应用 ID、metadata.name、route.path 和策略 AppID；禁止从路径名猜 AppID。按当前约定使用发布器 32 位应用 ID，提升 SemVer，生成授权版 ZIP，但不要上传或发布。
+```
+
 ### 只更新数据
 
 ```text
@@ -56,6 +62,7 @@ C:\Users\<用户名>\.codex\skills\skill-microapp-creator
 |---|---|
 | 源码、HTML、JS、CSS、程序模板、Dockerfile、`app.yaml` | 提升 SemVer，生成完整应用 ZIP |
 | 生产环境变量值 | 提升 SemVer，上传新版本后创建配置修订 |
+| `spec.accessControl`、授权 provider 或策略 AppID | 提升 SemVer，生成完整应用 ZIP；发布前做策略预检 |
 | 与代码版本强关联的图片或静态资源 | 完整应用 ZIP |
 | 当前生效 manifest 已声明 `mutablePaths` 内的 JSON、CSV、PDF、业务图片 | 独立 DataPatch revision |
 | 同时包含代码和可变数据 | 完整应用 ZIP；必要时再拆分后续 DataPatch |
@@ -71,6 +78,8 @@ C:\Users\<用户名>\.codex\skills\skill-microapp-creator
 - 健康检查必须是不登录、无副作用的 GET；smoke test 只使用 GET/HEAD。
 - 应用 ZIP 根目录包含 `app.yaml`、Dockerfile、`.dockerignore`、源码和锁文件，不包含 Compose、Nginx、生产数据、`.git` 或 `node_modules`。
 - 上传只形成 `READY`，不会自动切换生产；发布或“发布数据”必须获得单独明确授权。
+- 授权 AppID 必须与后台策略键完全一致；当前部署约定使用发布器 32 位应用 ID，不能用 `metadata.name` 或路由路径代替。
+- 回调地址固定为 `<scheme>://<host><route.path>/__app-deployer-access/callback`；静态校验不代表策略服务预检或浏览器授权已通过。
 - 用户数据库、用户上传、提交记录等默认为受保护数据，不能放进 `mutablePaths`；未知数据也按受保护处理。
 - 只产生用户数据、不需要资源数据更新的应用使用 `files` 和空 `mutablePaths`。
 - 同时存在后台资源和用户数据时必须分目录，只允许后台资源目录通过 DataPatch 更新。
@@ -81,6 +90,12 @@ C:\Users\<用户名>\.codex\skills\skill-microapp-creator
 
 ```text
 python scripts/audit_microapp.py <project-dir> --format markdown
+```
+
+授权版精确 AppID 校验：
+
+```text
+python scripts/audit_microapp.py <project-dir> --require-access-control --expected-access-app-id <exact-policy-id> --format markdown
 ```
 
 生成 DataPatch：
@@ -94,6 +109,7 @@ python scripts/build_data_patch.py --app <app-name> --revision <revision> --targ
 ## 规范索引
 
 - 应用 Manifest 说明：[APP_MANIFEST.md](APP_MANIFEST.md)
+- 授权策略与网关说明：[ACCESS_CONTROL.md](ACCESS_CONTROL.md)
 - 应用 Manifest JSON Schema：[app.schema.json](app.schema.json)
 - DataPatch 说明：[DATA_UPDATE.md](DATA_UPDATE.md)
 - DataPatch JSON Schema：[data-update.schema.json](data-update.schema.json)

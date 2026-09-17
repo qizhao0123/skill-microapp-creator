@@ -5,8 +5,9 @@
 1. New application
 2. Existing application retrofit
 3. Code or environment update
-4. Data-only update
-5. Console upload and publish states
+4. Access-controlled release
+5. Data-only update
+6. Console upload and publish states
 
 ## 1. New application
 
@@ -54,7 +55,15 @@ Use a code release for any source, app manifest, code-coupled asset, schema, Doc
 
 If a route or persistence-mode change is required, plan a new application identity or a platform-level migration. Do not hide the identity change inside a normal release.
 
-## 4. Data-only update
+## 4. Access-controlled release
+
+Read [ACCESS_CONTROL.md](ACCESS_CONTROL.md) completely. Record the App Deployer application ID, manifest name, route, and provider policy AppID from their authoritative records. Do not infer the policy key from the route or package name. In the current deployment convention, use the 32-character App Deployer application ID unless live provider evidence explicitly establishes another convention.
+
+For an existing app, create/update the policy, put the exact same ID in `spec.accessControl.appId`, use the generated callback, bump SemVer, and run the audit with `--require-access-control --expected-access-app-id <exact-policy-id>`.
+
+For a new app that requires the generated internal ID, upload a bootstrap version only to create a `READY` application record and do not publish it. Then create the policy and upload a strictly higher-SemVer access-controlled version. Upload validation is not provider validation; the publish preflight and private-browser redirect must be checked separately.
+
+## 5. Data-only update
 
 Use a DataPatch only when all changed files belong under one target allowed by the active manifest. Split changes into multiple patches when targets belong to separate non-overlapping mutable paths.
 
@@ -85,16 +94,17 @@ Build only with the control-plane-exported active `app.yaml` and a completed inv
 
 For JSON-only requests, pass `--validate-json` to the builder. This checks that every payload file has a `.json` suffix, is UTF-8, and parses as JSON; it does not validate business fields or a domain schema. Run domain-specific checks separately.
 
-## 5. Console upload and publish states
+## 6. Console upload and publish states
 
 Application package:
 
 1. Upload ZIP through “上传应用 ZIP” or “上传新版本”.
 2. Let the platform validate archive limits, file paths, required root files, and `app.yaml`.
 3. For a new `metadata.name`, the upload creates the application. For an existing name, it enforces invariant route/mode/persistence and higher SemVer.
-4. A successful upload creates `READY`; it does not deploy.
-5. Save environment values for that release without exposing them in output.
-6. Trigger “发布” only with explicit authorization and monitor the job to `ACTIVE` or `FAILED`.
+4. A successful upload creates `READY`; it does not deploy or prove provider authorization.
+5. For an access-controlled release, confirm the manifest/policy AppID match, exact callback, active policy/tags, complete control-plane environment, and successful fail-closed publish preflight.
+6. Save environment values for that release without exposing them in output.
+7. Trigger “发布” only with explicit authorization and monitor the job to `ACTIVE` or `FAILED`.
 
 DataPatch:
 

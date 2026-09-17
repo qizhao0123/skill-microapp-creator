@@ -30,6 +30,7 @@ MAX_TEXT_BYTES = 2 * 1024 * 1024
 APP_NAME_RE = re.compile(r"^[a-z][a-z0-9-]{2,40}$")
 SEMVER_RE = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 ROUTE_RE = re.compile(r"^/(?:[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*)$")
+ACCESS_APP_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 DATA_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._~-]+$")
 PROTECTED_NAME_SEGMENTS = {
     "account", "accounts", "db", "database", "databases", "order", "orders",
@@ -55,12 +56,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     parser.add_argument("--data-inventory", type=Path, help="completed DATA_SAFETY inventory JSON; replaces manual boundary flags")
     parser.add_argument("--operator-managed-path", action="append", default=[], help="exact mutable path owned by operators; repeatable")
+    parser.add_argument("--require-access-control", action="store_true", help="fail unless accessControl is enabled with the learning-platform provider")
+    parser.add_argument("--expected-access-app-id", help="exact provider policy AppID copied from its authoritative record")
     protected = parser.add_mutually_exclusive_group()
     protected.add_argument("--protected-path", action="append", default=[], help="user-generated or otherwise protected path; repeatable")
     protected.add_argument("--no-protected-data", action="store_true", help="assert that the data inventory found no protected state")
     args = parser.parse_args()
     if args.data_inventory and (args.operator_managed_path or args.protected_path or args.no_protected_data):
         parser.error("--data-inventory cannot be combined with manual data boundary flags")
+    if args.expected_access_app_id and not ACCESS_APP_ID_RE.fullmatch(args.expected_access_app_id):
+        parser.error("--expected-access-app-id must match the provider AppID syntax")
     return args
 
 
@@ -186,6 +191,10 @@ def parse_manifest(path: Path) -> dict[str, Any]:
         "persistenceMode": manifest_scalar(lines, "persistence", "mode"),
         "containerPath": manifest_scalar(lines, "persistence", "containerPath"),
         "mutablePaths": manifest_list(lines, "persistence", "mutablePaths"),
+        "accessControlEnabledRaw": manifest_scalar(lines, "accessControl", "enabled").lower(),
+        "accessControlEnabled": manifest_scalar(lines, "accessControl", "enabled").lower() == "true",
+        "accessControlProvider": manifest_scalar(lines, "accessControl", "provider"),
+        "accessControlAppId": manifest_scalar(lines, "accessControl", "appId"),
     }
 
 
@@ -277,7 +286,34 @@ def check_manifest(root: Path) -> tuple[dict[str, Any], list[Finding]]:
         findings.append(Finding("error", "MANIFEST_DATA_PATH", "File persistence must use containerPath: /app/data.", "app.yaml"))
     if summary.get("persistenceMode") == "none" and summary.get("containerPath"):
         findings.append(Finding("error", "MANIFEST_STATELESS_PATH", "Stateless apps must omit persistence.containerPath.", "app.yaml"))
+    access_enabled_raw = summary.get("accessControlEnabledRaw", "")
+    if access_enabled_raw not in {"", "true", "false"}:
+        findings.append(Finding("error", "MANIFEST_ACCESS_ENABLED", "spec.accessControl.enabled must be true or false.", "app.yaml"))
+    if summary.get("accessControlEnabled"):
+        if summary.get("accessControlProvider") != "learning-platform":
+            findings.append(Finding("error", "MANIFEST_ACCESS_PROVIDER", "spec.accessControl.provider must be learning-platform when enabled.", "app.yaml"))
+        if not ACCESS_APP_ID_RE.fullmatch(summary.get("accessControlAppId", "")):
+            findings.append(Finding("error", "MANIFEST_ACCESS_APP_ID", "spec.accessControl.appId must be a safe non-empty provider policy ID.", "app.yaml"))
     return summary, findings
+
+
+def check_access_control(manifest: dict[str, Any], require_access_control: bool, expected_app_id: str | None) -> list[Finding]:
+    findings: list[Finding] = []
+    enabled = bool(manifest.get("accessControlEnabled"))
+    if require_access_control and not enabled:
+        findings.append(Finding("error", "ACCESS_CONTROL_REQUIRED", "This release must enable spec.accessControl before packaging.", "app.yaml"))
+    if expected_app_id:
+        actual = manifest.get("accessControlAppId", "")
+        if not enabled:
+            findings.append(Finding("error", "ACCESS_APP_ID_UNENFORCED", "An expected provider AppID was supplied but access control is not enabled.", "app.yaml"))
+        elif actual != expected_app_id:
+            findings.append(Finding(
+                "error",
+                "ACCESS_APP_ID_MISMATCH",
+                f"Manifest accessControl.appId {actual!r} does not exactly match expected provider policy AppID {expected_app_id!r}.",
+                "app.yaml",
+            ))
+    return findings
 
 
 def check_data_inventory(manifest: dict[str, Any], operator_paths: list[str], protected_paths: list[str], no_protected_data: bool) -> list[Finding]:
@@ -503,7 +539,7 @@ def render_markdown(root: Path, manifest: dict[str, Any], findings: list[Finding
     lines = [f"# Microapp audit: {root}", "", f"- Scanned files: {file_count}", f"- Hard errors: {len(errors)}", f"- Heuristic findings: {len(warnings)}"]
     if manifest:
         lines.extend(["", "## Manifest summary", ""])
-        for key in ("name", "version", "routePath", "routeMode", "persistenceMode", "containerPath", "mutablePaths", "healthPath", "containerPort"):
+        for key in ("name", "version", "routePath", "routeMode", "persistenceMode", "containerPath", "mutablePaths", "accessControlEnabled", "accessControlProvider", "accessControlAppId", "healthPath", "containerPort"):
             value = manifest.get(key, "")
             if isinstance(value, list):
                 value = ", ".join(value) if value else "[]"
@@ -534,6 +570,7 @@ def main() -> int:
     findings.extend(check_required_and_forbidden(root, files))
     manifest, manifest_findings = check_manifest(root)
     findings.extend(manifest_findings)
+    findings.extend(check_access_control(manifest, args.require_access_control, args.expected_access_app_id))
     operator_paths = args.operator_managed_path
     protected_paths = args.protected_path
     no_protected_data = args.no_protected_data
