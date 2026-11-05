@@ -1,11 +1,11 @@
 ---
 name: skill-microapp-creator
-description: Create, retrofit, update, validate, and package internal Web apps for the controlled App Deployer contract (`deploy.xzd5/v1`) while protecting user-generated data and configuring learning-platform access policies. Use when a user asks to create a micro app for app-deployer, make an existing Web app compatible with the publisher, configure `accessControl`, distinguish the provider AppID from the route and App Deployer application ID, classify `/app/data`, author `app.yaml`, prepare a higher-SemVer code/config release, create a persistent-data-only DataPatch ZIP, or guide the upload and manual publish workflow.
+description: Use when creating, retrofitting, validating, packaging, uploading, or publishing App Deployer micro apps (微应用、微服务发版), including HTTP API releases on micro.xfwings.com, learning-platform access control, higher-SemVer code/config updates, and persistent-data-only DataPatch ZIPs.
 ---
 
-# App Deployer Micro App Creator
+# App Deployer Micro App Creator and Publisher
 
-Create or modify application repositories; do not modify App Deployer itself unless the user explicitly asks. Preserve existing business behavior and data while bringing the application to the platform contract.
+Create, package, or publish App Deployer micro apps as requested. Preserve existing application behavior and data during compatibility work. Modify App Deployer itself only when the user explicitly asks.
 
 ## Establish the source of truth
 
@@ -34,7 +34,10 @@ Use one primary path:
 | Change code, HTML, CSS, JS, templates, image assets tied to code, `app.yaml`, or production env values | Create a higher SemVer code release |
 | Enable, disable, or change `spec.accessControl`, its provider, or policy AppID | Create a higher SemVer code/config release; prove the exact policy ID before packaging |
 | Change only files under an active manifest's `persistence.mutablePaths` | Create an independent DataPatch revision; do not change app SemVer |
-| Upload or publish an artifact | Require explicit authorization; keep upload/validation separate from manual publish/cutover |
+| Upload or publish a code/config ZIP | Use [the App Deployer HTTP workflow](references/API_PUBLISH.md) for the authorized package or release. Upload and production cutover require distinct intent. |
+| Upload or publish a DataPatch | Use the DataPatch console workflow in [references/workflows.md](references/workflows.md). |
+
+For an already prepared code/config ZIP, go directly to [Upload and publish safely](#upload-and-publish-safely). Inspect the package and relevant release prerequisites without changing application code or rebuilding the ZIP. For a release already uploaded, resolve its exact version and checksum before publishing.
 
 If a request mixes code and mutable data, make a code release. Include seed data only for first initialization; never use it to overwrite live data.
 
@@ -157,7 +160,9 @@ deployctl validate <output.zip>
 
 ## Upload and publish safely
 
-Treat artifact creation as the default endpoint. Upload or publish only when the user explicitly requests that external mutation.
+Treat artifact creation as the default endpoint. Upload or publish only within the user’s explicit authorization for the specific package or version. One request can authorize both operations. An upload-only request ends at `READY`.
+
+For a code/config ZIP on `micro.xfwings.com`, read [references/API_PUBLISH.md](references/API_PUBLISH.md) for login, upload, release matching, configuration, publishing, and verification. Read `DEPLOYER_USERNAME` and `DEPLOYER_PASSWORD` from the release environment or use the operator’s existing secure credential store. Keep credentials out of chat, memory, and files produced for the task.
 
 - Code ZIP upload validates and creates a `READY` release; a new name creates the application, while an existing name requires a strictly higher SemVer and unchanged route/mode/persistence identity.
 - Enabling access control is fail-closed at publish preflight: missing provider configuration, missing/disabled policy, no active tags, TLS/provider failure, or an AppID mismatch blocks publish. Upload success alone does not prove authorization works.

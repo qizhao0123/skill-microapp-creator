@@ -42,6 +42,14 @@ C:\Users\<用户名>\.codex\skills\skill-microapp-creator
 [本次需求]
 ```
 
+### 发布指定版本
+
+```text
+使用 $skill-microapp-creator 通过 App Deployer HTTP 接口上传并发布 <应用名> <版本号>，部署包为 <ZIP 路径>。凭据从发布环境读取，发布后核对 ACTIVE、健康检查和主要入口。
+```
+
+只上传时，明确写“上传到 READY”。在发布环境配置 `DEPLOYER_USERNAME` 和 `DEPLOYER_PASSWORD`，或从现有凭据库读取。参见 [HTTP 发布流程](API_PUBLISH.md)。
+
 ### 创建或修正授权版
 
 ```text
@@ -77,7 +85,7 @@ C:\Users\<用户名>\.codex\skills\skill-microapp-creator
 - 所有文件型持久化数据写入 `/app/data`；初始化数据只放 `seed/data`，且仅在数据目录为空时复制。
 - 健康检查必须是不登录、无副作用的 GET；smoke test 只使用 GET/HEAD。
 - 应用 ZIP 根目录包含 `app.yaml`、Dockerfile、`.dockerignore`、源码和锁文件，不包含 Compose、Nginx、生产数据、`.git` 或 `node_modules`。
-- 上传只形成 `READY`，不会自动切换生产；发布或“发布数据”必须获得单独明确授权。
+- 上传后状态为 `READY`。只有用户明确要求发布指定版本或执行“发布数据”时，才切换生产。
 - 授权 AppID 必须与后台策略键完全一致；当前部署约定使用发布器 32 位应用 ID，不能用 `metadata.name` 或路由路径代替。
 - 回调地址固定为 `<scheme>://<host><route.path>/__app-deployer-access/callback`；静态校验不代表策略服务预检或浏览器授权已通过。
 - 用户数据库、用户上传、提交记录等默认为受保护数据，不能放进 `mutablePaths`；未知数据也按受保护处理。
