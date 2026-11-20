@@ -96,15 +96,15 @@ For JSON-only requests, pass `--validate-json` to the builder. This checks that 
 
 ## 6. Console upload and publish states
 
-Application package:
+Application package (see [API_PUBLISH.md](API_PUBLISH.md) for the HTTP procedure):
 
-1. Upload ZIP through “上传应用 ZIP” or “上传新版本”.
+1. Upload the ZIP through the HTTP endpoint or the corresponding console form.
 2. Let the platform validate archive limits, file paths, required root files, and `app.yaml`.
 3. For a new `metadata.name`, the upload creates the application. For an existing name, it enforces invariant route/mode/persistence and higher SemVer.
 4. A successful upload creates `READY`; it does not deploy or prove provider authorization.
 5. For an access-controlled release, confirm the manifest/policy AppID match, exact callback, active policy/tags, complete control-plane environment, and successful fail-closed publish preflight.
 6. Save environment values for that release without exposing them in output.
-7. Trigger “发布” only with explicit authorization and monitor the job to `ACTIVE` or `FAILED`.
+7. With explicit authorization, start the publish job and monitor it to `SUCCEEDED` or `FAILED`. After success, confirm the intended release is `ACTIVE`.
 
 DataPatch:
 
